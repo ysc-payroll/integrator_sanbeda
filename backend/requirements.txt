@@ -1,0 +1,20 @@
+# San Beda Integration Tool - Python Dependencies
+# Requires Python 3.8 or higher (3.10+ recommended)
+# PyQt6 suite for desktop application
+PyQt6==6.6.1
+PyQt6-Qt6==6.6.1
+PyQt6-WebEngine==6.6.0
+PyQt6-WebEngine-Qt6==6.6.0
+PyQt6-sip==13.6.0
+
+# HTTP requests for API calls
+requests>=2.31.0
+
+# Scheduling for automated sync
+schedule>=1.2.0
+
+# Python standard libraries (no installation needed, listed for reference)
+# - sqlite3 (database)
+# - json (data serialization)
+# - datetime (timestamps)
+# - logging (application logs)
