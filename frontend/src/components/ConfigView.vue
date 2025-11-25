@@ -13,35 +13,41 @@
 
       <div class="space-y-4">
         <div>
-          <label class="label">API Endpoint URL</label>
+          <label class="label">Host / IP Address</label>
           <input
-            v-model="form.pull_url"
+            v-model="form.pull_host"
             type="text"
-            placeholder="https://sanbeda.local/api/timesheets"
-            class="input"
-          />
-        </div>
-
-        <div>
-          <label class="label">Authentication Type</label>
-          <select v-model="form.pull_auth_type" class="input">
-            <option value="">None</option>
-            <option value="bearer">Bearer Token</option>
-            <option value="api_key">API Key</option>
-            <option value="basic">Basic Auth</option>
-          </select>
-        </div>
-
-        <div v-if="form.pull_auth_type">
-          <label class="label">Credentials</label>
-          <input
-            v-model="form.pull_credentials"
-            type="password"
-            :placeholder="getCredentialsPlaceholder(form.pull_auth_type)"
+            placeholder="192.168.9.125"
             class="input"
           />
           <p class="text-sm text-gray-500 mt-1">
-            {{ getCredentialsHint(form.pull_auth_type) }}
+            San Beda server IP address or hostname (e.g., 192.168.9.125)
+          </p>
+        </div>
+
+        <div>
+          <label class="label">Username</label>
+          <input
+            v-model="form.pull_username"
+            type="text"
+            placeholder="system"
+            class="input"
+          />
+          <p class="text-sm text-gray-500 mt-1">
+            San Beda system username
+          </p>
+        </div>
+
+        <div>
+          <label class="label">Password</label>
+          <input
+            v-model="form.pull_password"
+            type="password"
+            placeholder="Enter password"
+            class="input"
+          />
+          <p class="text-sm text-gray-500 mt-1">
+            San Beda system password
           </p>
         </div>
 
@@ -61,7 +67,7 @@
 
         <button
           @click="testConnection('pull')"
-          :disabled="!form.pull_url || testingPull"
+          :disabled="!form.pull_host || testingPull"
           class="btn btn-secondary"
         >
           <span v-if="!testingPull">Test Connection</span>
@@ -163,9 +169,9 @@ import { useToast } from '../composables/useToast'
 const { success, error, info } = useToast()
 
 const form = ref({
-  pull_url: '',
-  pull_auth_type: '',
-  pull_credentials: '',
+  pull_host: '',
+  pull_username: '',
+  pull_password: '',
   pull_interval_minutes: 30,
   push_url: '',
   push_auth_type: '',
@@ -182,9 +188,9 @@ const loadConfig = async () => {
     const result = await bridgeService.getApiConfig()
     if (result.data) {
       form.value = {
-        pull_url: result.data.pull_url || '',
-        pull_auth_type: result.data.pull_auth_type || '',
-        pull_credentials: result.data.pull_credentials === '***' ? '' : result.data.pull_credentials || '',
+        pull_host: result.data.pull_host || '',
+        pull_username: result.data.pull_username || '',
+        pull_password: result.data.pull_password === '***' ? '' : result.data.pull_password || '',
         pull_interval_minutes: result.data.pull_interval_minutes || 30,
         push_url: result.data.push_url || '',
         push_auth_type: result.data.push_auth_type || '',

@@ -7,6 +7,7 @@ Your development environment is now ready. All dependencies have been installed:
 - ✅ PyQt6 6.6.1 installed
 - ✅ Node.js dependencies installed
 - ✅ All services and components created
+- ✅ **Demo database seeded** with sample data!
 
 ## 🎯 Quick Start - Development Mode
 
@@ -95,9 +96,34 @@ build_release_windows.bat
 
 Output: `dist/SanBedaIntegration.exe`
 
+## 🎬 Demo Database
+
+The database has been seeded with sample data:
+- **10 employees** (John Doe, Jane Smith, etc.)
+- **112 timesheet entries** from the last 7 days
+- **78 synced** records
+- **34 pending** records
+- **10 sync logs** (pull and push history)
+
+### Database Management
+
+**Add more demo data**:
+```bash
+cd backend
+source venv/bin/activate
+python seed_data.py
+```
+
+**Reset database** (start fresh):
+```bash
+cd backend
+source venv/bin/activate
+python reset_database.py
+```
+
 ## 🧪 Testing the App
 
-### Initial Configuration
+### Explore the Demo Data
 
 When you first run the app:
 

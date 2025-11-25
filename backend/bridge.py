@@ -158,7 +158,9 @@ class Bridge(QObject):
             # Don't send credentials to frontend for security
             if config:
                 config['pull_credentials'] = '***' if config.get('pull_credentials') else None
+                config['pull_password'] = '***' if config.get('pull_password') else None
                 config['push_credentials'] = '***' if config.get('push_credentials') else None
+                config['login_token'] = '***' if config.get('login_token') else None
             return json.dumps({"success": True, "data": config})
         except Exception as e:
             logger.error(f"Error getting API config: {e}")
@@ -174,14 +176,15 @@ class Bridge(QObject):
             update_fields = {}
             allowed_fields = [
                 'pull_url', 'pull_auth_type', 'pull_credentials',
+                'pull_host', 'pull_username', 'pull_password',
                 'push_url', 'push_auth_type', 'push_credentials',
                 'pull_interval_minutes', 'push_interval_minutes'
             ]
 
             for field in allowed_fields:
                 if field in config:
-                    # Skip if credentials are masked
-                    if field.endswith('_credentials') and config[field] == '***':
+                    # Skip if credentials/passwords are masked
+                    if (field.endswith('_credentials') or field.endswith('_password')) and config[field] == '***':
                         continue
                     update_fields[field] = config[field]
 

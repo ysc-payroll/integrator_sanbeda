@@ -121,6 +121,11 @@ class Database:
                     pull_url TEXT,
                     pull_auth_type TEXT,
                     pull_credentials TEXT,
+                    pull_host TEXT,
+                    pull_username TEXT,
+                    pull_password TEXT,
+                    login_token TEXT,
+                    token_created_at DATETIME,
                     push_url TEXT,
                     push_auth_type TEXT,
                     push_credentials TEXT,
@@ -131,6 +136,28 @@ class Database:
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Add new columns to existing table if they don't exist (for migration)
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN pull_host TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN pull_username TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN pull_password TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN login_token TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN token_created_at DATETIME")
+            except:
+                pass
 
             # Insert default config if not exists
             cursor.execute("SELECT COUNT(*) as count FROM api_config WHERE id = 1")
@@ -431,3 +458,27 @@ class Database:
             raise
         finally:
             conn.close()
+
+    def update_login_token(self, token):
+        """Update San Beda login token"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE api_config
+                SET login_token = ?, token_created_at = ?, updated_at = ?
+                WHERE id = 1
+            """, (token, datetime.now(), datetime.now()))
+            conn.commit()
+            logger.info("Login token updated successfully")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating login token: {e}")
+            raise
+        finally:
+            conn.close()
+
+    def get_login_token(self):
+        """Get current login token"""
+        config = self.get_api_config()
+        return config.get('login_token') if config else None

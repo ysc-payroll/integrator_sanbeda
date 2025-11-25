@@ -1,26 +1,29 @@
 """
 San Beda Integration Tool - Pull Service
-Service for pulling timesheet data from San Beda's on-premise system
+Service for pulling timesheet data from San Beda's timekeeping system
 """
 
 import requests
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
+from urllib.parse import urlencode
+from .auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
 
 class PullService:
-    """Service for pulling data from San Beda on-premise timekeeping system"""
+    """Service for pulling data from San Beda timekeeping system"""
 
     def __init__(self, database):
         self.database = database
+        self.auth_service = AuthService(database)
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'San Beda Integration Tool/1.0',
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json;charset=UTF-8'
         })
 
     def get_config(self):
@@ -29,63 +32,23 @@ class PullService:
         if not config:
             raise Exception("API configuration not found")
 
-        if not config.get('pull_url'):
-            raise Exception("Pull URL not configured")
+        if not config.get('pull_host'):
+            raise Exception("San Beda host not configured")
 
         return config
-
-    def build_auth_headers(self, config):
-        """Build authentication headers based on config"""
-        headers = {}
-
-        auth_type = config.get('pull_auth_type', '').lower()
-        credentials = config.get('pull_credentials')
-
-        if auth_type == 'bearer':
-            # Bearer token authentication
-            headers['Authorization'] = f'Bearer {credentials}'
-        elif auth_type == 'api_key':
-            # API key authentication
-            headers['X-API-Key'] = credentials
-        elif auth_type == 'basic':
-            # Basic authentication (credentials should be base64 encoded)
-            headers['Authorization'] = f'Basic {credentials}'
-
-        return headers
 
     def test_connection(self):
         """Test connection to San Beda API"""
         try:
-            config = self.get_config()
-            headers = self.build_auth_headers(config)
-
-            # Try to ping the endpoint
-            response = self.session.get(
-                config['pull_url'],
-                headers=headers,
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                return True, "Connection successful"
-            elif response.status_code == 401:
-                return False, "Authentication failed: Invalid credentials"
-            elif response.status_code == 404:
-                return False, "Endpoint not found: Check URL"
-            else:
-                return False, f"Connection failed: HTTP {response.status_code}"
-
-        except requests.exceptions.Timeout:
-            return False, "Connection timeout: Server not responding"
-        except requests.exceptions.ConnectionError:
-            return False, "Connection error: Cannot reach server"
+            # Test authentication
+            return self.auth_service.test_connection()
         except Exception as e:
             logger.error(f"Connection test error: {e}")
             return False, f"Error: {str(e)}"
 
     def pull_data(self):
         """
-        Pull timesheet data from San Beda on-premise system
+        Pull timesheet data from San Beda timekeeping system
 
         Returns:
             tuple: (success: bool, message: str, stats: dict)
@@ -103,60 +66,117 @@ class PullService:
 
             # Get configuration
             config = self.get_config()
-            headers = self.build_auth_headers(config)
+            host = config['pull_host']
 
-            # TODO: Customize this based on actual San Beda API
-            # Example: You might need to pass date range parameters
-            params = {
-                'from_date': config.get('last_pull_at'),  # Pull only new data
-                'limit': 1000
-            }
+            # Get authentication token
+            login_token = self.auth_service.get_valid_token()
 
-            # Make API request
-            response = self.session.get(
-                config['pull_url'],
-                headers=headers,
-                params=params,
-                timeout=30
-            )
+            # Set token in headers
+            self.session.headers['X-Subject-Token'] = login_token
 
-            if response.status_code != 200:
-                error_msg = f"Pull failed: HTTP {response.status_code}"
-                logger.error(error_msg)
-                self.database.update_sync_log(
-                    log_id, 'error', error_message=error_msg
-                )
-                return False, error_msg, stats
+            # Calculate date range (last 7 days if no last_pull_at)
+            last_pull = config.get('last_pull_at')
+            if last_pull:
+                start_time = datetime.fromisoformat(last_pull)
+            else:
+                start_time = datetime.now() - timedelta(days=7)
 
-            # Parse response
-            data = response.json()
+            end_time = datetime.now()
 
-            # TODO: Adjust this based on actual API response structure
-            # Expected structure: {"data": [...], "employees": [...]}
-            timesheets = data.get('data', [])
-            employees = data.get('employees', [])
+            # Format dates for San Beda API (yyyy-MM-dd HH:mm:ss)
+            start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+            end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
 
-            logger.info(f"Received {len(timesheets)} timesheet records")
-            logger.info(f"Received {len(employees)} employee records")
+            logger.info(f"Pulling data from {start_time_str} to {end_time_str}")
 
-            # Process employees first
-            for emp_data in employees:
-                try:
-                    self.process_employee(emp_data)
-                except Exception as e:
-                    logger.error(f"Error processing employee {emp_data}: {e}")
+            # Pull data with pagination
+            page = 1
+            page_size = 100  # Adjust based on performance
+            total_records = 0
 
-            # Process timesheets
-            for ts_data in timesheets:
-                stats['processed'] += 1
-                try:
-                    if self.process_timesheet(ts_data):
-                        stats['success'] += 1
-                    else:
-                        stats['skipped'] += 1
-                except Exception as e:
-                    logger.error(f"Error processing timesheet {ts_data}: {e}")
-                    stats['failed'] += 1
+            while True:
+                logger.info(f"Fetching page {page}...")
+
+                # Build request parameters
+                params = {
+                    'startTime': start_time_str,
+                    'endTime': end_time_str,
+                    'personName': '',
+                    'personId': '',
+                    'deptId': '',
+                    'page': page,
+                    'pageSize': page_size
+                }
+
+                # Build URL
+                url = f"http://{host}/brms/api/v1.0/attendance/record-info-report/page?{urlencode(params)}"
+
+                # Make API request
+                response = self.session.get(url, timeout=30)
+
+                if response.status_code == 401:
+                    # Token expired, re-authenticate
+                    logger.warning("Token expired, re-authenticating...")
+                    self.auth_service.invalidate_token()
+                    login_token = self.auth_service.authenticate()
+                    self.session.headers['X-Subject-Token'] = login_token
+
+                    # Retry request
+                    response = self.session.get(url, timeout=30)
+
+                if response.status_code != 200:
+                    error_msg = f"Pull failed: HTTP {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    self.database.update_sync_log(
+                        log_id, 'error', error_message=error_msg
+                    )
+                    return False, error_msg, stats
+
+                # Parse response
+                data = response.json()
+
+                # Check API-level success
+                if data.get('code') != 1000:
+                    error_msg = f"API Error: {data.get('desc', 'Unknown error')}"
+                    logger.error(error_msg)
+                    self.database.update_sync_log(
+                        log_id, 'error', error_message=error_msg
+                    )
+                    return False, error_msg, stats
+
+                # Get page data
+                page_data = data.get('data', {}).get('pageData', [])
+
+                if not page_data:
+                    logger.info(f"No more data on page {page}, stopping pagination")
+                    break
+
+                logger.info(f"Processing {len(page_data)} attendance records from page {page}")
+
+                # Process each attendance record
+                for attendance in page_data:
+                    stats['processed'] += 1
+                    try:
+                        result = self.process_attendance(attendance)
+                        if result == 'success':
+                            stats['success'] += 2  # 2 entries per attendance (IN + OUT)
+                        elif result == 'skipped':
+                            stats['skipped'] += 2
+                        else:
+                            stats['failed'] += 1
+                    except Exception as e:
+                        logger.error(f"Error processing attendance {attendance}: {e}")
+                        stats['failed'] += 1
+
+                total_records += len(page_data)
+
+                # Check if we should continue pagination
+                # San Beda API doesn't provide clear pagination info, so we stop when page is not full
+                if len(page_data) < page_size:
+                    logger.info("Last page reached")
+                    break
+
+                page += 1
 
             # Update last pull time
             self.database.update_last_sync_time('pull')
@@ -168,10 +188,10 @@ class PullService:
                 records_processed=stats['processed'],
                 records_success=stats['success'],
                 records_failed=stats['failed'],
-                metadata={'skipped': stats['skipped']}
+                metadata={'skipped': stats['skipped'], 'total_records': total_records}
             )
 
-            message = f"Pull completed: {stats['success']} records imported"
+            message = f"Pull completed: {stats['success']} records imported ({stats['processed']} attendance records processed)"
             logger.info(message)
             return True, message, stats
 
@@ -183,44 +203,75 @@ class PullService:
             )
             return False, error_msg, stats
 
-    def process_employee(self, emp_data):
+    def process_attendance(self, attendance_data):
         """
-        Process employee data from API response
-
-        TODO: Adjust field mapping based on actual API response
-        Expected fields: id, name, employee_code, employee_number
-        """
-        self.database.add_or_update_employee(
-            backend_id=emp_data['id'],
-            name=emp_data['name'],
-            employee_code=emp_data.get('employee_code'),
-            employee_number=emp_data.get('employee_number')
-        )
-
-    def process_timesheet(self, ts_data):
-        """
-        Process timesheet data from API response
-
-        TODO: Adjust field mapping based on actual API response
-        Expected fields: sync_id, employee_id, log_type, date, time, photo_path
+        Process single attendance record from San Beda API
+        Creates 2 timesheet entries: one for signInTime, one for signOutTime
 
         Returns:
-            bool: True if added, False if skipped (duplicate)
+            str: 'success', 'skipped', or 'failed'
         """
-        # Get or create employee
-        employee = self.database.get_employee_by_backend_id(ts_data['employee_id'])
-        if not employee:
-            logger.warning(f"Employee {ts_data['employee_id']} not found, skipping timesheet")
-            return False
+        try:
+            # Extract employee data
+            employee_id = attendance_data.get('code')  # Person ID
+            employee_name = attendance_data.get('name')
+            attendance_date = attendance_data.get('attendanceDate')
+            sign_in_time = attendance_data.get('signInTime')
+            sign_out_time = attendance_data.get('signOutTime')
 
-        # Add timesheet entry
-        result = self.database.add_timesheet_entry(
-            sync_id=ts_data['sync_id'],
-            employee_id=employee['id'],
-            log_type=ts_data['log_type'],
-            date=ts_data['date'],
-            time=ts_data['time'],
-            photo_path=ts_data.get('photo_path')
-        )
+            if not all([employee_id, employee_name, attendance_date]):
+                logger.warning(f"Missing required fields in attendance data: {attendance_data}")
+                return 'failed'
 
-        return result is not None  # None means duplicate, returns row ID if successful
+            # First, ensure employee exists
+            employee = self.database.get_employee_by_backend_id(int(employee_id))
+            if not employee:
+                # Create employee
+                emp_id = self.database.add_or_update_employee(
+                    backend_id=int(employee_id),
+                    name=employee_name,
+                    employee_code=employee_id,
+                    employee_number=None
+                )
+                employee = {'id': emp_id, 'backend_id': int(employee_id)}
+                logger.info(f"Created employee: {employee_name} (ID: {employee_id})")
+
+            # Create IN entry if signInTime exists
+            if sign_in_time:
+                timestamp_in = datetime.strptime(f"{attendance_date} {sign_in_time}", "%Y-%m-%d %H:%M")
+                sync_id_in = f"{employee_id}_{timestamp_in.strftime('%Y%m%d%H%M%S')}_IN"
+
+                result_in = self.database.add_timesheet_entry(
+                    sync_id=sync_id_in,
+                    employee_id=employee['id'],
+                    log_type='in',
+                    date=attendance_date,
+                    time=sign_in_time,
+                    photo_path=None
+                )
+
+                if result_in is None:
+                    logger.debug(f"IN entry already exists: {sync_id_in}")
+
+            # Create OUT entry if signOutTime exists
+            if sign_out_time:
+                timestamp_out = datetime.strptime(f"{attendance_date} {sign_out_time}", "%Y-%m-%d %H:%M")
+                sync_id_out = f"{employee_id}_{timestamp_out.strftime('%Y%m%d%H%M%S')}_OUT"
+
+                result_out = self.database.add_timesheet_entry(
+                    sync_id=sync_id_out,
+                    employee_id=employee['id'],
+                    log_type='out',
+                    date=attendance_date,
+                    time=sign_out_time,
+                    photo_path=None
+                )
+
+                if result_out is None:
+                    logger.debug(f"OUT entry already exists: {sync_id_out}")
+
+            return 'success'
+
+        except Exception as e:
+            logger.error(f"Error processing attendance: {e}", exc_info=True)
+            return 'failed'
