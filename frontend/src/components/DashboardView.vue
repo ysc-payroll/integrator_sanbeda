@@ -2,6 +2,9 @@
   <div class="p-6 space-y-6">
     <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
 
+    <!-- Push Progress Modal -->
+    <SyncProgressModal :show="showProgressModal" :progress="pushProgress" />
+
     <!-- Sync Controls -->
     <div class="grid grid-cols-2 gap-6">
       <!-- Pull Sync Card -->
@@ -129,9 +132,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import bridgeService from '../services/bridge'
 import { useToast } from '../composables/useToast'
+import SyncProgressModal from './SyncProgressModal.vue'
 
 const { success, error } = useToast()
 
@@ -147,6 +151,16 @@ const recentLogs = ref([])
 const pullLoading = ref(false)
 const pushLoading = ref(false)
 const loadingLogs = ref(false)
+
+// Push progress modal state
+const showProgressModal = ref(false)
+const pushProgress = ref({
+  batch_current: 0,
+  batch_total: 0,
+  batch_size: 0,
+  success: 0,
+  failed: 0
+})
 
 const loadData = async () => {
   try {
@@ -185,14 +199,35 @@ const handlePullSync = async () => {
 
 const handlePushSync = async () => {
   pushLoading.value = true
+  showProgressModal.value = true
+  // Reset progress
+  pushProgress.value = {
+    batch_current: 0,
+    batch_total: 0,
+    batch_size: 0,
+    success: 0,
+    failed: 0
+  }
   try {
-    const result = await bridgeService.startPushSync()
-    success(result.message)
-    await loadData()
+    // This returns immediately - actual result comes via syncCompleted signal
+    await bridgeService.startPushSync()
   } catch (err) {
     error(`Push sync failed: ${err.message}`)
-  } finally {
     pushLoading.value = false
+    showProgressModal.value = false
+  }
+}
+
+// Handle progress updates from backend
+const handleProgressUpdate = (event) => {
+  console.log('Progress update received:', event.detail)
+  const progress = event.detail
+  pushProgress.value = {
+    batch_current: progress.batch_current || 0,
+    batch_total: progress.batch_total || 0,
+    batch_size: progress.batch_size || 0,
+    success: progress.success || 0,
+    failed: progress.failed || 0
   }
 }
 
@@ -202,14 +237,36 @@ const formatDateTime = (dateTime) => {
   return date.toLocaleString()
 }
 
-// Listen for sync completion events
+// Listen for sync events
 onMounted(async () => {
   await bridgeService.whenReady()
   await loadData()
 
+  // Listen for sync progress updates
+  window.addEventListener('syncProgressUpdated', handleProgressUpdate)
+
   // Listen for sync completion
   window.addEventListener('syncCompleted', async (event) => {
+    const data = event.detail
+    console.log('Sync completed:', data)
+
+    // Handle push completion
+    if (data.type === 'push') {
+      pushLoading.value = false
+      showProgressModal.value = false
+
+      if (data.result.success) {
+        success(data.result.message)
+      } else {
+        error(data.result.error || 'Push sync failed')
+      }
+    }
+
     await loadData()
   })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('syncProgressUpdated', handleProgressUpdate)
 })
 </script>

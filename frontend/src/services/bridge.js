@@ -155,6 +155,14 @@ class BridgeService {
     return this.call('testConnection', connectionType)
   }
 
+  async loginPush(username, password) {
+    return this.call('loginPush', username, password)
+  }
+
+  async logoutPush() {
+    return this.call('logoutPush')
+  }
+
   // ==================== UTILITY METHODS ====================
 
   async getAppInfo() {

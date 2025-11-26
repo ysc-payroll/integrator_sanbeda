@@ -3,10 +3,11 @@ San Beda Integration Tool - Python-JavaScript Bridge
 Provides QWebChannel bridge for communication between PyQt6 and Vue.js
 """
 
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QThread, QMetaObject, Qt, Q_ARG
 import json
 import logging
 from datetime import datetime
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -116,27 +117,43 @@ class Bridge(QObject):
 
     @pyqtSlot(result=str)
     def startPushSync(self):
-        """Manually trigger push sync to cloud payroll"""
-        try:
-            logger.info("Manual push sync triggered from UI")
-            success, message, stats = self.push_service.push_data()
+        """Manually trigger push sync to cloud payroll (runs in background thread)"""
+        logger.info("Manual push sync triggered from UI")
 
-            result = {
-                "success": success,
-                "message": message,
-                "stats": stats
-            }
+        # Start push in background thread
+        def run_push():
+            try:
+                # Progress callback to emit updates to frontend
+                def on_progress(progress_dict):
+                    logger.info(f"Emitting progress: {progress_dict}")
+                    self.syncProgressUpdated.emit(json.dumps(progress_dict))
 
-            # Emit signal to update UI
-            self.syncCompleted.emit(json.dumps({
-                "type": "push",
-                "result": result
-            }))
+                success, message, stats = self.push_service.push_data(progress_callback=on_progress)
 
-            return json.dumps(result)
-        except Exception as e:
-            logger.error(f"Error in manual push sync: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+                result = {
+                    "success": success,
+                    "message": message,
+                    "stats": stats
+                }
+
+                # Emit signal to update UI
+                self.syncCompleted.emit(json.dumps({
+                    "type": "push",
+                    "result": result
+                }))
+
+            except Exception as e:
+                logger.error(f"Error in push sync thread: {e}")
+                self.syncCompleted.emit(json.dumps({
+                    "type": "push",
+                    "result": {"success": False, "error": str(e)}
+                }))
+
+        thread = threading.Thread(target=run_push, daemon=True)
+        thread.start()
+
+        # Return immediately - results will come via signals
+        return json.dumps({"success": True, "message": "Push sync started"})
 
     @pyqtSlot(result=str)
     def getSyncLogs(self):
@@ -160,7 +177,18 @@ class Bridge(QObject):
                 config['pull_credentials'] = '***' if config.get('pull_credentials') else None
                 config['pull_password'] = '***' if config.get('pull_password') else None
                 config['push_credentials'] = '***' if config.get('push_credentials') else None
+                config['push_password'] = '***' if config.get('push_password') else None
                 config['login_token'] = '***' if config.get('login_token') else None
+                # Push login state - include token existence and user info
+                config['push_token_exists'] = bool(config.get('push_token'))
+                config['push_token'] = '***' if config.get('push_token') else None
+                # Format datetime for display
+                if config.get('push_token_created_at'):
+                    try:
+                        dt = datetime.fromisoformat(str(config['push_token_created_at']))
+                        config['push_token_created_at'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        pass
             return json.dumps({"success": True, "data": config})
         except Exception as e:
             logger.error(f"Error getting API config: {e}")
@@ -178,14 +206,16 @@ class Bridge(QObject):
                 'pull_url', 'pull_auth_type', 'pull_credentials',
                 'pull_host', 'pull_username', 'pull_password',
                 'push_url', 'push_auth_type', 'push_credentials',
+                'push_username', 'push_password',
                 'pull_interval_minutes', 'push_interval_minutes'
             ]
 
             for field in allowed_fields:
                 if field in config:
-                    # Skip if credentials/passwords are masked
-                    if (field.endswith('_credentials') or field.endswith('_password')) and config[field] == '***':
-                        continue
+                    # Skip if credentials/passwords are masked or empty (don't overwrite existing)
+                    if field.endswith('_credentials') or field.endswith('_password'):
+                        if config[field] == '***' or config[field] == '' or config[field] is None:
+                            continue
                     update_fields[field] = config[field]
 
             self.database.update_api_config(**update_fields)
@@ -207,9 +237,45 @@ class Bridge(QObject):
             else:
                 return json.dumps({"success": False, "error": "Invalid connection type"})
 
-            return json.dumps({"success": success, "message": message})
+            if success:
+                return json.dumps({"success": True, "message": message})
+            else:
+                return json.dumps({"success": False, "error": message})
         except Exception as e:
             logger.error(f"Error testing connection: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
+    @pyqtSlot(str, str, result=str)
+    def loginPush(self, username, password):
+        """Login to YAHSHUA Payroll and store token"""
+        try:
+            logger.info(f"Attempting YAHSHUA login for {username}")
+
+            # Save credentials first
+            self.database.update_api_config(push_username=username, push_password=password)
+
+            # Authenticate
+            auth_result = self.push_service.authenticate(username, password)
+
+            return json.dumps({
+                "success": True,
+                "message": f"Logged in as {auth_result['user_logged']}",
+                "user_logged": auth_result['user_logged'],
+                "company_name": auth_result['company_name']
+            })
+        except Exception as e:
+            logger.error(f"Error logging in to YAHSHUA: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
+    @pyqtSlot(result=str)
+    def logoutPush(self):
+        """Logout from YAHSHUA Payroll (clear token)"""
+        try:
+            logger.info("Logging out from YAHSHUA")
+            self.database.update_push_token(None)
+            return json.dumps({"success": True, "message": "Logged out successfully"})
+        except Exception as e:
+            logger.error(f"Error logging out from YAHSHUA: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
     # ==================== UTILITY METHODS ====================

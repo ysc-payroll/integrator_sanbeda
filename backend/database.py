@@ -129,6 +129,10 @@ class Database:
                     push_url TEXT,
                     push_auth_type TEXT,
                     push_credentials TEXT,
+                    push_username TEXT,
+                    push_password TEXT,
+                    push_token TEXT,
+                    push_token_created_at DATETIME,
                     pull_interval_minutes INTEGER DEFAULT 30,
                     push_interval_minutes INTEGER DEFAULT 15,
                     last_pull_at DATETIME,
@@ -156,6 +160,28 @@ class Database:
                 pass
             try:
                 cursor.execute("ALTER TABLE api_config ADD COLUMN token_created_at DATETIME")
+            except:
+                pass
+            # YAHSHUA push credential fields
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN push_username TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN push_password TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN push_token TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN push_token_created_at DATETIME")
+            except:
+                pass
+            # YAHSHUA user info from login response
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN push_user_logged TEXT")
             except:
                 pass
 
@@ -205,7 +231,8 @@ class Database:
         cursor = conn.cursor()
         try:
             cursor.execute("""
-                SELECT t.*, e.backend_id as employee_backend_id, e.name as employee_name
+                SELECT t.*, e.backend_id as employee_backend_id, e.name as employee_name,
+                       e.employee_code as employee_code
                 FROM timesheet t
                 JOIN employee e ON t.employee_id = e.id
                 WHERE t.backend_timesheet_id IS NULL
@@ -493,3 +520,38 @@ class Database:
         """Get current login token"""
         config = self.get_api_config()
         return config.get('login_token') if config else None
+
+    def update_push_token(self, token, user_logged=None):
+        """Update YAHSHUA push token and user info"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            if token is None:
+                # Logout - clear token and user info
+                cursor.execute("""
+                    UPDATE api_config
+                    SET push_token = NULL, push_token_created_at = NULL,
+                        push_user_logged = NULL, updated_at = ?
+                    WHERE id = 1
+                """, (datetime.now(),))
+            else:
+                # Login - store token and user info
+                cursor.execute("""
+                    UPDATE api_config
+                    SET push_token = ?, push_token_created_at = ?,
+                        push_user_logged = ?, updated_at = ?
+                    WHERE id = 1
+                """, (token, datetime.now(), user_logged, datetime.now()))
+            conn.commit()
+            logger.info("Push token updated successfully")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating push token: {e}")
+            raise
+        finally:
+            conn.close()
+
+    def get_push_token(self):
+        """Get current YAHSHUA push token"""
+        config = self.get_api_config()
+        return config.get('push_token') if config else None
