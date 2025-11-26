@@ -5,40 +5,80 @@ Desktop application for syncing timekeeping data between on-premise and cloud sy
 
 import sys
 import os
-import logging
 import platform
-from pathlib import Path
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import threading
+import traceback
+from datetime import datetime
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QUrl, Qt
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtWebChannel import QWebChannel
-
-from database import Database
-from bridge import Bridge
-from services.pull_service import PullService
-from services.push_service import PushService
-from services.scheduler import SyncScheduler
+# =============================================================================
+# EARLY LOGGING SETUP - Before any other imports that might fail
+# =============================================================================
 
 # Determine if running as frozen executable (PyInstaller bundle)
 IS_FROZEN = getattr(sys, 'frozen', False)
 
 # Configure log file path
 if IS_FROZEN and platform.system() == 'Darwin':
-    # macOS: Use /tmp for debugging packaged app
     LOG_FILE = '/tmp/sanbeda_integration.log'
 elif IS_FROZEN:
-    # Windows/other: Use temp directory
     import tempfile
     LOG_FILE = os.path.join(tempfile.gettempdir(), 'sanbeda_integration.log')
 else:
-    # Development: Use current directory
     LOG_FILE = 'sanbeda_integration.log'
 
-# Configure logging
+def early_log(message):
+    """Write to log file before logging module is configured"""
+    try:
+        with open(LOG_FILE, 'a') as f:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            f.write(f"{timestamp} - EARLY - {message}\n")
+    except:
+        pass
+
+# Create log file and write startup marker
+early_log("=" * 60)
+early_log("APPLICATION STARTING")
+early_log(f"Python: {sys.version}")
+early_log(f"Platform: {platform.system()} {platform.release()}")
+early_log(f"Frozen: {IS_FROZEN}")
+early_log(f"Executable: {sys.executable}")
+early_log("=" * 60)
+
+# =============================================================================
+# IMPORTS - Wrapped in try-catch to log any import errors
+# =============================================================================
+
+try:
+    early_log("Importing standard libraries...")
+    import logging
+    from pathlib import Path
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    import threading
+
+    early_log("Importing PyQt6...")
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QUrl, Qt
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    from PyQt6.QtWebEngineCore import QWebEngineSettings
+    from PyQt6.QtWebChannel import QWebChannel
+
+    early_log("Importing local modules...")
+    from database import Database
+    from bridge import Bridge
+    from services.pull_service import PullService
+    from services.push_service import PushService
+    from services.scheduler import SyncScheduler
+
+    early_log("All imports successful!")
+
+except Exception as e:
+    early_log(f"IMPORT ERROR: {e}")
+    early_log(traceback.format_exc())
+    sys.exit(1)
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+
 logging.basicConfig(
     level=logging.DEBUG if not IS_FROZEN else logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
