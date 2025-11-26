@@ -29,7 +29,7 @@
 
         <!-- App Info -->
         <div class="p-4 border-t text-xs text-gray-500">
-          <div>Version 1.0.0</div>
+          <div>Version {{ appVersion }}</div>
           <div>© 2025 The Abba</div>
         </div>
       </div>
@@ -55,6 +55,7 @@ import ToastNotification from './components/ToastNotification.vue'
 import bridgeService from './services/bridge'
 
 const currentView = ref('dashboard')
+const appVersion = ref('1.0.4')
 
 // Icon components (SVG)
 const DashboardIcon = () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
@@ -90,6 +91,12 @@ onMounted(async () => {
   try {
     await bridgeService.init()
     console.log('Bridge initialized')
+
+    // Fetch app version from backend
+    const appInfo = await bridgeService.getAppInfo()
+    if (appInfo?.data?.version) {
+      appVersion.value = appInfo.data.version
+    }
   } catch (err) {
     console.warn('Bridge initialization failed:', err)
     console.log('Running in browser mode (no PyQt6 bridge)')
