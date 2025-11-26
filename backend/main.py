@@ -6,6 +6,7 @@ Desktop application for syncing timekeeping data between on-premise and cloud sy
 import sys
 import os
 import logging
+import platform
 from pathlib import Path
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
@@ -22,19 +23,34 @@ from services.pull_service import PullService
 from services.push_service import PushService
 from services.scheduler import SyncScheduler
 
+# Determine if running as frozen executable (PyInstaller bundle)
+IS_FROZEN = getattr(sys, 'frozen', False)
+
+# Configure log file path
+if IS_FROZEN and platform.system() == 'Darwin':
+    # macOS: Use /tmp for debugging packaged app
+    LOG_FILE = '/tmp/sanbeda_integration.log'
+elif IS_FROZEN:
+    # Windows/other: Use temp directory
+    import tempfile
+    LOG_FILE = os.path.join(tempfile.gettempdir(), 'sanbeda_integration.log')
+else:
+    # Development: Use current directory
+    LOG_FILE = 'sanbeda_integration.log'
+
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG if not IS_FROZEN else logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('sanbeda_integration.log'),
+        logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Always run in development mode for easier development
-DEV_MODE = True  # Set to False for production builds
+# Dev mode: True for development, False when frozen (packaged)
+DEV_MODE = not IS_FROZEN
 HTTP_PORT = 8765
 
 
@@ -157,7 +173,11 @@ def main():
     try:
         logger.info("=" * 80)
         logger.info("San Beda Integration Tool Starting")
+        logger.info(f"Python Version: {sys.version}")
+        logger.info(f"Platform: {platform.system()} {platform.release()}")
+        logger.info(f"Frozen (packaged): {IS_FROZEN}")
         logger.info(f"Development Mode: {DEV_MODE}")
+        logger.info(f"Log File: {LOG_FILE}")
         logger.info("=" * 80)
 
         app = IntegrationApp()
