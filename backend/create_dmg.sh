@@ -4,7 +4,7 @@
 set -e
 
 APP_NAME="San Beda Integration"
-VERSION="1.0.0"
+VERSION="${1:-1.0.0}"  # Accept version as argument, default to 1.0.0
 DMG_NAME="SanBedaIntegration-v${VERSION}.dmg"
 APP_PATH="../dist/${APP_NAME}.app"
 DMG_PATH="../dist/${DMG_NAME}"

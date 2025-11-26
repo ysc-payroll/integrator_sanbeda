@@ -1,0 +1,131 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.0.0, v1.0.1, etc.
+
+permissions:
+  contents: write  # Required to create releases and upload assets
+
+jobs:
+  build-macos:
+    name: Build macOS DMG (Intel - Compatible with all Macs)
+    runs-on: macos-13  # Intel runner - works on Intel AND Apple Silicon (via Rosetta 2)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Build macOS app with PyInstaller
+        working-directory: ./backend
+        run: |
+          pyinstaller --clean --distpath ../dist --workpath build sanbeda-integration.spec
+
+      - name: Create DMG installer
+        working-directory: ./backend
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x create_dmg.sh
+          ./create_dmg.sh "$VERSION"
+
+      - name: Upload DMG to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/SanBedaIntegration-*.dmg
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Create Windows ICO icon
+        working-directory: ./icons
+        run: |
+          python -m pip install pillow
+          python create_ico.py
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build Windows EXE with PyInstaller
+        working-directory: ./backend
+        run: |
+          pyinstaller --clean --distpath ../dist --workpath build sanbeda-integration-windows.spec
+
+      - name: Create ZIP archive
+        working-directory: ./dist
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          Compress-Archive -Path SanBedaIntegration.exe -DestinationPath SanBedaIntegration-v$version-Windows.zip
+
+      - name: Upload Windows ZIP to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/SanBedaIntegration-*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
