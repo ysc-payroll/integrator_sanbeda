@@ -94,12 +94,31 @@ DEV_MODE = not IS_FROZEN
 HTTP_PORT = 8765
 
 
+def get_frontend_path():
+    """Get the path to frontend/dist folder, works for both dev and packaged"""
+    if IS_FROZEN:
+        # PyInstaller bundle: files are in sys._MEIPASS
+        base_path = Path(sys._MEIPASS)
+        frontend_dir = base_path / 'frontend' / 'dist'
+    else:
+        # Development: relative to this file
+        frontend_dir = Path(__file__).parent.parent / 'frontend' / 'dist'
+
+    early_log(f"Frontend path: {frontend_dir}")
+    early_log(f"Frontend exists: {frontend_dir.exists()}")
+
+    if frontend_dir.exists():
+        early_log(f"Frontend contents: {list(frontend_dir.iterdir())[:10]}")
+
+    return frontend_dir
+
+
 class LocalHTTPRequestHandler(SimpleHTTPRequestHandler):
     """Custom HTTP request handler for serving frontend files"""
 
     def __init__(self, *args, **kwargs):
         # Serve from frontend/dist directory
-        frontend_dir = Path(__file__).parent.parent / 'frontend' / 'dist'
+        frontend_dir = get_frontend_path()
         super().__init__(*args, directory=str(frontend_dir), **kwargs)
 
     def log_message(self, format, *args):
