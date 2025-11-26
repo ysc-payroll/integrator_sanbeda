@@ -44,6 +44,102 @@ early_log(f"Executable: {sys.executable}")
 early_log("=" * 60)
 
 # =============================================================================
+# NATIVE SPLASH SCREEN - Show before heavy imports using Tkinter
+# =============================================================================
+
+_tk_root = None
+_tk_splash = None
+
+def show_native_splash():
+    """Show a native splash window using Tkinter before PyQt6 loads"""
+    global _tk_root, _tk_splash
+    if IS_FROZEN:
+        try:
+            import tkinter as tk
+
+            _tk_root = tk.Tk()
+            _tk_root.title("San Beda Integration")
+
+            # Remove window decorations
+            _tk_root.overrideredirect(True)
+
+            # Window size
+            width, height = 400, 200
+
+            # Center on screen
+            screen_width = _tk_root.winfo_screenwidth()
+            screen_height = _tk_root.winfo_screenheight()
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+            _tk_root.geometry(f"{width}x{height}+{x}+{y}")
+
+            # Set background color
+            _tk_root.configure(bg="#1e40af")
+
+            # App name
+            title_label = tk.Label(
+                _tk_root,
+                text="San Beda",
+                font=("Arial", 28, "bold"),
+                fg="white",
+                bg="#1e40af"
+            )
+            title_label.pack(pady=(40, 0))
+
+            # Subtitle
+            subtitle_label = tk.Label(
+                _tk_root,
+                text="Integration Tool",
+                font=("Arial", 14),
+                fg="white",
+                bg="#1e40af"
+            )
+            subtitle_label.pack(pady=(5, 0))
+
+            # Loading message
+            loading_label = tk.Label(
+                _tk_root,
+                text="Loading, please wait...",
+                font=("Arial", 11),
+                fg="#93c5fd",
+                bg="#1e40af"
+            )
+            loading_label.pack(pady=(30, 0))
+
+            # Version
+            version_label = tk.Label(
+                _tk_root,
+                text="Version 1.0.6",
+                font=("Arial", 9),
+                fg="#60a5fa",
+                bg="#1e40af"
+            )
+            version_label.pack(pady=(20, 0))
+
+            # Bring to front
+            _tk_root.lift()
+            _tk_root.attributes('-topmost', True)
+            _tk_root.update()
+
+            early_log("Tkinter splash screen shown")
+        except Exception as e:
+            early_log(f"Tkinter splash error: {e}")
+
+def close_native_splash():
+    """Close Tkinter splash"""
+    global _tk_root, _tk_splash
+    try:
+        if _tk_root:
+            _tk_root.destroy()
+            _tk_root = None
+            early_log("Tkinter splash closed")
+    except Exception as e:
+        early_log(f"Error closing Tkinter splash: {e}")
+
+# Show native splash immediately
+show_native_splash()
+
+# =============================================================================
 # IMPORTS - Wrapped in try-catch to log any import errors
 # =============================================================================
 
@@ -54,13 +150,20 @@ try:
     from http.server import HTTPServer, SimpleHTTPRequestHandler
     import threading
 
-    early_log("Importing PyQt6...")
+    early_log("Importing PyQt6 (this may take a while on first run)...")
     from PyQt6.QtWidgets import QApplication, QSplashScreen, QLabel, QVBoxLayout, QWidget
     from PyQt6.QtCore import QUrl, Qt, QTimer
     from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter
+    early_log("PyQt6 base imported")
+
     from PyQt6.QtWebEngineWidgets import QWebEngineView
+    early_log("QtWebEngineWidgets imported")
+
     from PyQt6.QtWebEngineCore import QWebEngineSettings
+    early_log("QtWebEngineCore imported")
+
     from PyQt6.QtWebChannel import QWebChannel
+    early_log("QtWebChannel imported")
 
     early_log("Importing local modules...")
     from database import Database
@@ -74,6 +177,7 @@ try:
 except Exception as e:
     early_log(f"IMPORT ERROR: {e}")
     early_log(traceback.format_exc())
+    close_native_splash()
     sys.exit(1)
 
 # =============================================================================
@@ -144,7 +248,7 @@ def create_splash_pixmap():
     font = QFont("Arial", 9)
     painter.setFont(font)
     painter.setPen(QColor("#60a5fa"))
-    painter.drawText(pixmap.rect().adjusted(0, 200, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Version 1.0.5")
+    painter.drawText(pixmap.rect().adjusted(0, 200, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Version 1.0.6")
 
     painter.end()
     return pixmap
@@ -181,12 +285,14 @@ class IntegrationApp:
         self.app.setApplicationName("San Beda Integration Tool")
         self.app.setOrganizationName("The Abba")
 
-        # Show splash screen immediately
+        # Close Tkinter splash and show Qt splash
+        close_native_splash()
+
         self.splash = QSplashScreen(create_splash_pixmap())
         self.splash.show()
         self.app.processEvents()  # Force the splash to display
 
-        logger.info("Splash screen displayed")
+        logger.info("Qt splash screen displayed")
 
         # Use QTimer to defer heavy initialization
         # This allows the splash screen to show while loading
