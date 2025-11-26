@@ -17,6 +17,7 @@
           <option value="all">All Types</option>
           <option value="pull">Pull</option>
           <option value="push">Push</option>
+          <option value="config">Config</option>
         </select>
         <select v-model="filterStatus" class="input w-48">
           <option value="all">All Status</option>
@@ -65,7 +66,9 @@
                 <span
                   :class="[
                     'badge',
-                    log.sync_type === 'pull' ? 'badge-info' : 'badge-success'
+                    log.sync_type === 'pull' ? 'badge-info' :
+                    log.sync_type === 'push' ? 'badge-success' :
+                    'badge-secondary'
                   ]"
                 >
                   {{ log.sync_type.toUpperCase() }}
@@ -84,7 +87,10 @@
                 </span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <div class="flex flex-col">
+                <div v-if="log.sync_type === 'config'" class="text-gray-500">
+                  -
+                </div>
+                <div v-else class="flex flex-col">
                   <span class="text-green-600">✓ {{ log.records_success || 0 }} success</span>
                   <span v-if="log.records_failed > 0" class="text-red-600">✗ {{ log.records_failed }} failed</span>
                   <span class="text-gray-500">Total: {{ log.records_processed || 0 }}</span>

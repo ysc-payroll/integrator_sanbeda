@@ -95,6 +95,14 @@ class Bridge(QObject):
     def startPullSync(self):
         """Manually trigger pull sync from San Beda"""
         try:
+            # Check if pull is configured
+            token = self.database.get_login_token()
+            if not token:
+                return json.dumps({
+                    "success": False,
+                    "error": "Pull not configured. Go to Configuration and click Reconnect."
+                })
+
             logger.info("Manual pull sync triggered from UI")
             success, message, stats = self.pull_service.pull_data()
 
@@ -178,6 +186,8 @@ class Bridge(QObject):
                 config['pull_password'] = '***' if config.get('pull_password') else None
                 config['push_credentials'] = '***' if config.get('push_credentials') else None
                 config['push_password'] = '***' if config.get('push_password') else None
+                # Pull login state - include token existence
+                config['login_token_exists'] = bool(config.get('login_token'))
                 config['login_token'] = '***' if config.get('login_token') else None
                 # Push login state - include token existence and user info
                 config['push_token_exists'] = bool(config.get('push_token'))
@@ -221,6 +231,10 @@ class Bridge(QObject):
             self.database.update_api_config(**update_fields)
             logger.info(f"API config updated: {list(update_fields.keys())}")
 
+            # Log config change (only if fields were actually updated)
+            if update_fields:
+                self.database.log_config_change("Configuration saved")
+
             return json.dumps({"success": True, "message": "Configuration updated successfully"})
         except Exception as e:
             logger.error(f"Error updating API config: {e}")
@@ -257,6 +271,9 @@ class Bridge(QObject):
             # Authenticate
             auth_result = self.push_service.authenticate(username, password)
 
+            # Log the login
+            self.database.log_config_change("YAHSHUA login successful")
+
             return json.dumps({
                 "success": True,
                 "message": f"Logged in as {auth_result['user_logged']}",
@@ -273,6 +290,10 @@ class Bridge(QObject):
         try:
             logger.info("Logging out from YAHSHUA")
             self.database.update_push_token(None)
+
+            # Log the logout
+            self.database.log_config_change("YAHSHUA logout")
+
             return json.dumps({"success": True, "message": "Logged out successfully"})
         except Exception as e:
             logger.error(f"Error logging out from YAHSHUA: {e}")

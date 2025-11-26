@@ -95,11 +95,11 @@ class Database:
                 )
             """)
 
-            # Sync logs table (track pull/push operations)
+            # Sync logs table (track pull/push/config operations)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sync_type TEXT NOT NULL CHECK(sync_type IN ('pull', 'push')),
+                    sync_type TEXT NOT NULL CHECK(sync_type IN ('pull', 'push', 'config')),
                     status TEXT NOT NULL CHECK(status IN ('started', 'success', 'error')),
                     records_processed INTEGER DEFAULT 0,
                     records_success INTEGER DEFAULT 0,
@@ -437,6 +437,25 @@ class Database:
                     LIMIT ?
                 """, (limit,))
             return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def log_config_change(self, message="Configuration updated"):
+        """Log a configuration change event"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            now = datetime.now()
+            cursor.execute("""
+                INSERT INTO sync_logs (sync_type, status, started_at, completed_at, error_message)
+                VALUES ('config', 'success', ?, ?, ?)
+            """, (now, now, message))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error logging config change: {e}")
+            raise
         finally:
             conn.close()
 

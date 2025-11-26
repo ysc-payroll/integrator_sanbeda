@@ -163,6 +163,7 @@
 
         <div class="flex gap-2">
           <button
+            v-if="pullConnected"
             @click="testConnection('pull')"
             :disabled="!form.pull_host || testingPull"
             class="btn btn-secondary"
@@ -175,8 +176,8 @@
             :disabled="!form.pull_host || reconnectingPull"
             class="btn btn-primary"
           >
-            <span v-if="!reconnectingPull">Reconnect</span>
-            <span v-else>Reconnecting...</span>
+            <span v-if="!reconnectingPull">{{ pullConnected ? 'Reconnect' : 'Connect' }}</span>
+            <span v-else>{{ pullConnected ? 'Reconnecting...' : 'Connecting...' }}</span>
           </button>
         </div>
       </div>
@@ -229,6 +230,7 @@ const loggingOut = ref(false)
 
 // Pull config state
 const pullPasswordSet = ref(false)
+const pullConnected = ref(false)
 const reconnectingPull = ref(false)
 
 const loadConfig = async () => {
@@ -252,6 +254,9 @@ const loadConfig = async () => {
 
       // Set pull password state
       pullPasswordSet.value = result.data.pull_password === '***'
+
+      // Set pull connected state
+      pullConnected.value = result.data.login_token_exists || false
     }
   } catch (err) {
     console.error('Error loading config:', err)
@@ -339,6 +344,7 @@ const logoutPush = async () => {
 }
 
 const reconnectPull = async () => {
+  const wasConnected = pullConnected.value
   reconnectingPull.value = true
   try {
     // Save config first to ensure credentials are updated
@@ -347,12 +353,13 @@ const reconnectPull = async () => {
     // Test connection (this will re-authenticate and get new token)
     const result = await bridgeService.testConnection('pull')
     if (result.success) {
-      success('Reconnected to San Beda successfully')
+      pullConnected.value = true
+      success(wasConnected ? 'Reconnected to San Beda successfully' : 'Connected to San Beda successfully')
     } else {
-      error(result.message || 'Reconnection failed')
+      error(result.message || 'Connection failed')
     }
   } catch (err) {
-    error(`Reconnection failed: ${err.message}`)
+    error(`Connection failed: ${err.message}`)
   } finally {
     reconnectingPull.value = false
   }
