@@ -323,6 +323,17 @@ class Database:
         finally:
             conn.close()
 
+    def get_employee_by_code(self, employee_code):
+        """Get employee by employee code (supports alphanumeric codes)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT * FROM employee WHERE employee_code = ?", (employee_code,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
     def get_all_employees(self):
         """Get all active employees"""
         conn = self.get_connection()

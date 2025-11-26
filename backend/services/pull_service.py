@@ -223,18 +223,24 @@ class PullService:
                 logger.warning(f"Missing required fields in attendance data: {attendance_data}")
                 return 'failed'
 
-            # First, ensure employee exists
-            employee = self.database.get_employee_by_backend_id(int(employee_id))
+            # First, ensure employee exists (use employee_code for lookup)
+            employee = self.database.get_employee_by_code(employee_id)
             if not employee:
                 # Create employee
+                # Try to use backend_id as integer if possible, otherwise set to None
+                try:
+                    backend_id_int = int(employee_id)
+                except ValueError:
+                    backend_id_int = None
+
                 emp_id = self.database.add_or_update_employee(
-                    backend_id=int(employee_id),
+                    backend_id=backend_id_int,
                     name=employee_name,
                     employee_code=employee_id,
                     employee_number=None
                 )
-                employee = {'id': emp_id, 'backend_id': int(employee_id)}
-                logger.info(f"Created employee: {employee_name} (ID: {employee_id})")
+                employee = {'id': emp_id, 'employee_code': employee_id}
+                logger.info(f"Created employee: {employee_name} (Code: {employee_id})")
 
             # Create IN entry if signInTime exists
             if sign_in_time:

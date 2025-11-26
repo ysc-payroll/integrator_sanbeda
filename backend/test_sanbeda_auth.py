@@ -19,9 +19,12 @@ def test_authentication():
     db.update_api_config(
         pull_host='192.168.9.125',
         pull_username='system',
-        pull_password='admin1234567'
+        pull_password='Admin@123'
     )
     print("   ✓ Credentials configured")
+    print("   Host: 192.168.9.125")
+    print("   Username: system")
+    print("   Password: Admin@123")
 
     # Initialize auth service
     print("\n2. Initializing authentication service...")

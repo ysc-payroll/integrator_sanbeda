@@ -6,7 +6,9 @@ Handles authentication with San Beda timekeeping system
 import requests
 import logging
 import hashlib
+import base64
 from datetime import datetime, timedelta
+from Crypto.PublicKey import RSA
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,47 @@ class AuthService:
             'Accept': 'application/json',
             'Content-Type': 'application/json;charset=UTF-8'
         })
+        # Generate RSA key pair for client
+        self.rsa_key = RSA.generate(2048)
+        self.public_key_str = base64.b64encode(
+            self.rsa_key.publickey().export_key(format='DER')
+        ).decode('utf-8')
+
+    def calculate_signature(self, username, password, realm, random_key):
+        """
+        Calculate authentication signature using 5-round MD5 encryption
+
+        According to San Beda API documentation:
+        temp1 = md5(password)
+        temp2 = md5(userName + temp1)
+        temp3 = md5(temp2)
+        temp4 = md5(userName + ":" + realm + ":" + temp3)
+        signature = md5(temp4 + ":" + randomKey)
+
+        Returns:
+            str: MD5 signature (32-character lowercase hex string)
+        """
+        # Round 1: MD5(password)
+        temp1 = hashlib.md5(password.encode()).hexdigest()
+        logger.debug(f"Round 1 - MD5(password): {temp1}")
+
+        # Round 2: MD5(userName + temp1)
+        temp2 = hashlib.md5((username + temp1).encode()).hexdigest()
+        logger.debug(f"Round 2 - MD5(userName + temp1): {temp2}")
+
+        # Round 3: MD5(temp2)
+        temp3 = hashlib.md5(temp2.encode()).hexdigest()
+        logger.debug(f"Round 3 - MD5(temp2): {temp3}")
+
+        # Round 4: MD5(userName + ":" + realm + ":" + temp3)
+        temp4 = hashlib.md5(f"{username}:{realm}:{temp3}".encode()).hexdigest()
+        logger.debug(f"Round 4 - MD5(userName:realm:temp3): {temp4}")
+
+        # Round 5: MD5(temp4 + ":" + randomKey)
+        signature = hashlib.md5(f"{temp4}:{random_key}".encode()).hexdigest()
+        logger.debug(f"Round 5 - MD5(temp4:randomKey): {signature}")
+
+        return signature
 
     def get_valid_token(self):
         """
@@ -107,28 +150,30 @@ class AuthService:
                 if not all([random_key, realm, encrypt_type]):
                     raise Exception(f"Invalid challenge response: {challenge_data}")
 
-                logger.info(f"Challenge details: encryptType={encrypt_type}, randomKey={random_key}")
+                logger.info(f"Challenge details: encryptType={encrypt_type}, randomKey={random_key}, realm={realm}")
 
-                # Step 2: Encrypt password and send authentication
+                # Step 2: Calculate signature using 5-round MD5 encryption
                 if encrypt_type == 'MD5':
-                    # Encrypt password: MD5(MD5(password) + randomKey)
-                    password_md5 = hashlib.md5(password.encode()).hexdigest()
-                    encrypted_password = hashlib.md5((password_md5 + random_key).encode()).hexdigest()
-                    logger.info(f"Password encrypted using MD5")
+                    signature = self.calculate_signature(username, password, realm, random_key)
+                    logger.info(f"Signature calculated: {signature}")
                 else:
                     raise Exception(f"Unsupported encryption type: {encrypt_type}")
 
-                # Send authentication with encrypted password
+                # Build Step 2 authentication payload
                 payload_step2 = {
                     "userName": username,
-                    "password": encrypted_password,
+                    "signature": signature,
+                    "randomKey": random_key,
+                    "publicKey": self.public_key_str,
+                    "encryptType": encrypt_type,
                     "ipAddress": "",
                     "clientType": "WINPC_V2",
-                    "randomKey": random_key,
-                    "realm": realm
+                    "userType": "0"
                 }
 
-                logger.info("Step 2: Sending authentication with encrypted password...")
+                logger.info("Step 2: Sending second authentication with signature...")
+                logger.debug(f"Payload keys: {list(payload_step2.keys())}")
+
                 response2 = self.session.post(
                     auth_url,
                     json=payload_step2,
@@ -143,14 +188,14 @@ class AuthService:
 
                 # Parse successful response
                 data = response2.json()
-                login_token = data.get('loginToken')
+                login_token = data.get('token')  # Note: response uses 'token' not 'loginToken'
 
                 if not login_token:
-                    raise Exception(f"No loginToken in response: {data}")
+                    raise Exception(f"No token in response: {data}")
 
                 # Store token in database
                 self.database.update_login_token(login_token)
-                logger.info(f"Authentication successful (challenge-response), token: {login_token[:20]}...")
+                logger.info(f"Authentication successful! Token: {login_token[:20]}...")
 
                 return login_token
 
