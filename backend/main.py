@@ -55,8 +55,9 @@ try:
     import threading
 
     early_log("Importing PyQt6...")
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import QUrl, Qt
+    from PyQt6.QtWidgets import QApplication, QSplashScreen, QLabel, QVBoxLayout, QWidget
+    from PyQt6.QtCore import QUrl, Qt, QTimer
+    from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWebEngineCore import QWebEngineSettings
     from PyQt6.QtWebChannel import QWebChannel
@@ -113,6 +114,42 @@ def get_frontend_path():
     return frontend_dir
 
 
+def create_splash_pixmap():
+    """Create a splash screen pixmap programmatically"""
+    width, height = 400, 250
+    pixmap = QPixmap(width, height)
+    pixmap.fill(QColor("#1e40af"))  # Primary blue color
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Draw app name
+    painter.setPen(QColor("white"))
+    font = QFont("Arial", 24, QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect().adjusted(0, 50, 0, 0), Qt.AlignmentFlag.AlignHCenter, "San Beda")
+
+    # Draw subtitle
+    font = QFont("Arial", 14)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect().adjusted(0, 90, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Integration Tool")
+
+    # Draw loading message
+    font = QFont("Arial", 11)
+    painter.setFont(font)
+    painter.setPen(QColor("#93c5fd"))  # Light blue
+    painter.drawText(pixmap.rect().adjusted(0, 160, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Loading, please wait...")
+
+    # Draw version
+    font = QFont("Arial", 9)
+    painter.setFont(font)
+    painter.setPen(QColor("#60a5fa"))
+    painter.drawText(pixmap.rect().adjusted(0, 200, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Version 1.0.5")
+
+    painter.end()
+    return pixmap
+
+
 class LocalHTTPRequestHandler(SimpleHTTPRequestHandler):
     """Custom HTTP request handler for serving frontend files"""
 
@@ -139,32 +176,72 @@ class IntegrationApp:
     def __init__(self):
         logger.info("Initializing San Beda Integration Tool")
 
-        # Initialize Qt Application
+        # Initialize Qt Application FIRST
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("San Beda Integration Tool")
         self.app.setOrganizationName("The Abba")
 
-        # Initialize database
-        self.database = Database()
+        # Show splash screen immediately
+        self.splash = QSplashScreen(create_splash_pixmap())
+        self.splash.show()
+        self.app.processEvents()  # Force the splash to display
 
-        # Initialize services
-        self.pull_service = PullService(self.database)
-        self.push_service = PushService(self.database)
+        logger.info("Splash screen displayed")
 
-        # Initialize bridge
-        self.bridge = Bridge(self.database, self.pull_service, self.push_service)
+        # Use QTimer to defer heavy initialization
+        # This allows the splash screen to show while loading
+        QTimer.singleShot(100, self.initialize_app)
 
-        # Initialize scheduler
-        self.scheduler = SyncScheduler(self.pull_service, self.push_service, self.database)
+    def initialize_app(self):
+        """Initialize the app components (called after splash is shown)"""
+        try:
+            self.splash.showMessage("Initializing database...",
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                QColor("#93c5fd"))
+            self.app.processEvents()
 
-        # Start HTTP server if not in dev mode
-        if not DEV_MODE:
-            self.start_http_server()
+            # Initialize database
+            self.database = Database()
 
-        # Create web view
-        self.create_web_view()
+            self.splash.showMessage("Starting services...",
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                QColor("#93c5fd"))
+            self.app.processEvents()
 
-        logger.info("Application initialized successfully")
+            # Initialize services
+            self.pull_service = PullService(self.database)
+            self.push_service = PushService(self.database)
+
+            # Initialize bridge
+            self.bridge = Bridge(self.database, self.pull_service, self.push_service)
+
+            # Initialize scheduler
+            self.scheduler = SyncScheduler(self.pull_service, self.push_service, self.database)
+
+            self.splash.showMessage("Starting web engine...",
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                QColor("#93c5fd"))
+            self.app.processEvents()
+
+            # Start HTTP server if not in dev mode
+            if not DEV_MODE:
+                self.start_http_server()
+
+            # Create web view
+            self.create_web_view()
+
+            logger.info("Application initialized successfully")
+
+            # Close splash and show main window
+            self.splash.finish(self.view)
+
+            # Start scheduler
+            self.scheduler.start()
+
+        except Exception as e:
+            logger.error(f"Initialization error: {e}", exc_info=True)
+            self.splash.close()
+            raise
 
     def start_http_server(self):
         """Start local HTTP server for serving frontend files"""
@@ -220,10 +297,6 @@ class IntegrationApp:
     def run(self):
         """Run the application"""
         logger.info("Starting application event loop")
-
-        # Start scheduler
-        self.scheduler.start()
-
         return self.app.exec()
 
 

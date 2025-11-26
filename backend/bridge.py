@@ -308,7 +308,7 @@ class Bridge(QObject):
             "success": True,
             "data": {
                 "name": "San Beda Integration Tool",
-                "version": "1.0.4",
+                "version": "1.0.5",
                 "description": "Bridge between on-premise timekeeping and cloud payroll"
             }
         })
