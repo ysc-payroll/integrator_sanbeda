@@ -1,188 +1,53 @@
 # San Beda Integration Tool
 
-A desktop application that bridges San Beda's on-premise timekeeping system with The Abba's cloud payroll system.
+A desktop application that bridges San Beda's on-premise timekeeping system with YAHSHUA cloud payroll.
 
-## Overview
+## Features
 
-The San Beda Integration Tool automates the process of synchronizing timesheet data between two systems:
+- **Pull** - Fetch attendance data from San Beda on-premise server
+- **Push** - Sync timesheet data to YAHSHUA cloud payroll
+- **Auto Sync** - Configurable automatic sync intervals
+- **Offline-First** - Works without internet, syncs when online
+- **Activity Logs** - Complete history of all sync operations
 
-- **Pull**: Fetches timesheet data from San Beda's on-premise database
-- **Push**: Syncs timesheet data to The Abba's cloud payroll system
+## Tech Stack
 
-### Features
-
-- **Offline-First Architecture**: Works without internet connection, syncs when online
-- **Automated Sync**: Configurable intervals for automatic pull and push operations
-- **Manual Control**: Trigger sync operations on-demand
-- **Data Management**: View, filter, and manage timesheet records
-- **Error Handling**: Retry failed syncs with detailed error messages
-- **Audit Logs**: Complete history of all sync operations
-
-### Technology Stack
-
-- **Backend**: Python 3.10 + PyQt6
-- **Frontend**: Vue.js 3 + Vite + TailwindCSS
-- **Database**: SQLite (local storage)
-- **Communication**: QWebChannel (Python ↔ JavaScript bridge)
+| Layer | Technology |
+|-------|------------|
+| Backend | Python 3.10+ / PyQt6 |
+| Frontend | Vue.js 3 / Vite / TailwindCSS |
+| Database | SQLite |
+| Packaging | PyInstaller |
+| CI/CD | GitHub Actions |
 
 ## Installation
 
 ### macOS
-
-1. Download `SanBedaIntegration-v1.0.0.dmg`
-2. Open the DMG file
-3. Drag "San Beda Integration" to Applications folder
-4. Launch from Applications
+1. Download `SanBedaIntegration-vX.X.X.dmg` from Releases
+2. Open DMG and drag to Applications
+3. First launch takes 1-2 minutes (one-time initialization)
 
 ### Windows
+1. Download `SanBedaIntegration-vX.X.X-Windows.zip` from Releases
+2. Extract and run `SanBedaIntegration.exe`
 
-1. Download `SanBedaIntegration-v1.0.0.zip`
-2. Extract to desired location
-3. Run `SanBedaIntegration.exe`
+## Documentation
 
-## Configuration
+See **[CLAUDE.md](CLAUDE.md)** for comprehensive developer documentation including:
+- Architecture overview
+- Authentication flows (San Beda MD5 + YAHSHUA Bearer)
+- Database schema
+- Build instructions
+- Troubleshooting guide
 
-On first launch, configure the application:
+## Release
 
-1. Navigate to **Configuration** tab
-2. Set up **Pull Configuration** (San Beda on-premise):
-   - API Endpoint URL
-   - Authentication type (Bearer, API Key, or Basic)
-   - Credentials
-   - Sync interval
-3. Set up **Push Configuration** (Cloud Payroll):
-   - API Endpoint URL
-   - Authentication type
-   - Credentials
-   - Sync interval
-4. Click **Test Connection** to verify each endpoint
-5. Click **Save Configuration**
-
-## Usage
-
-### Dashboard
-
-- View sync statistics (total, synced, pending, errors)
-- Manually trigger pull/push operations
-- See recent sync activity
-
-### Timesheets
-
-- Browse all timesheet records
-- Filter by status (synced, pending, errors)
-- Search by employee name or ID
-- Retry failed syncs
-
-### Configuration
-
-- Update API endpoints
-- Change authentication credentials
-- Adjust sync intervals
-- Test connections
-
-### Logs
-
-- View complete sync history
-- Filter by type (pull/push) and status
-- See detailed error messages
-- Monitor sync duration
-
-## API Integration
-
-### Pull API (San Beda On-Premise)
-
-The tool expects the pull endpoint to return data in this format:
-
-```json
-{
-  "data": [
-    {
-      "sync_id": "1001_2734_20251108152755",
-      "employee_id": 2734,
-      "log_type": "in",
-      "date": "2025-11-08",
-      "time": "15:27",
-      "photo_path": null
-    }
-  ],
-  "employees": [
-    {
-      "id": 2734,
-      "name": "John Doe",
-      "employee_code": "EMP001",
-      "employee_number": 8104
-    }
-  ]
-}
+```bash
+git tag vX.X.X
+git push origin vX.X.X
 ```
 
-### Push API (Cloud Payroll)
-
-The tool posts data to the push endpoint in this format:
-
-```json
-{
-  "sync_id": "1001_2734_20251108152755",
-  "employee_id": 2734,
-  "employee_name": "John Doe",
-  "log_type": "in",
-  "date": "2025-11-08",
-  "time": "15:27",
-  "photo_path": null,
-  "created_at": "2025-11-08T15:27:55"
-}
-```
-
-Expected response:
-
-```json
-{
-  "id": 128906,
-  "message": "Success"
-}
-```
-
-**Note**: Adjust the data formats in `backend/services/pull_service.py` and `backend/services/push_service.py` to match your actual API specifications.
-
-## Database Schema
-
-The application stores data locally in SQLite with these main tables:
-
-- **timesheet**: Timesheet entries with sync status
-- **employee**: Employee reference data
-- **sync_logs**: History of sync operations
-- **api_config**: API configuration
-
-For detailed schema, see `backend/database.py`.
-
-## Troubleshooting
-
-### Connection Issues
-
-- Verify API endpoints are accessible
-- Check firewall settings
-- Ensure credentials are correct
-- Use "Test Connection" button to diagnose
-
-### Sync Failures
-
-- Check error message in Logs tab
-- Verify data format matches API expectations
-- Retry individual failed records from Timesheets tab
-
-### Application Won't Start
-
-- Check log file: `sanbeda_integration.log`
-- Ensure PyQt6 dependencies are installed
-- On macOS, check System Preferences → Security for blocked apps
-
-## Development
-
-See [BUILD_GUIDE.md](BUILD_GUIDE.md) for development setup and build instructions.
-
-## Support
-
-For issues or questions, contact The Abba support team.
+GitHub Actions will automatically build and create a release with macOS DMG and Windows ZIP.
 
 ## License
 
