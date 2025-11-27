@@ -17,13 +17,14 @@ from datetime import datetime
 IS_FROZEN = getattr(sys, 'frozen', False)
 
 # Configure log file path
-if IS_FROZEN and platform.system() == 'Darwin':
-    LOG_FILE = '/tmp/sanbeda_integration.log'
-elif IS_FROZEN:
-    import tempfile
-    LOG_FILE = os.path.join(tempfile.gettempdir(), 'sanbeda_integration.log')
+import tempfile
+if IS_FROZEN:
+    LOG_DIR = os.path.join(tempfile.gettempdir(), 'sanbeda_integration', 'system_logs')
 else:
-    LOG_FILE = 'sanbeda_integration.log'
+    LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'system_logs')
+
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, datetime.now().strftime('%Y%m%d') + '.log')
 
 def early_log(message):
     """Write to log file before logging module is configured"""
@@ -151,15 +152,15 @@ try:
     import threading
 
     early_log("Importing PyQt6 (this may take a while on first run)...")
-    from PyQt6.QtWidgets import QApplication, QSplashScreen, QLabel, QVBoxLayout, QWidget
+    from PyQt6.QtWidgets import QApplication, QSplashScreen, QLabel, QVBoxLayout, QWidget, QMainWindow, QMenuBar, QMenu
     from PyQt6.QtCore import QUrl, Qt, QTimer
-    from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter
+    from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter, QAction, QKeySequence
     early_log("PyQt6 base imported")
 
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     early_log("QtWebEngineWidgets imported")
 
-    from PyQt6.QtWebEngineCore import QWebEngineSettings
+    from PyQt6.QtWebEngineCore import QWebEngineSettings, QWebEngineProfile
     early_log("QtWebEngineCore imported")
 
     from PyQt6.QtWebChannel import QWebChannel
@@ -339,7 +340,7 @@ class IntegrationApp:
             logger.info("Application initialized successfully")
 
             # Close splash and show main window
-            self.splash.finish(self.view)
+            self.splash.finish(self.main_window)
 
             # Start scheduler
             self.scheduler.start()
@@ -363,7 +364,12 @@ class IntegrationApp:
         server_thread.start()
 
     def create_web_view(self):
-        """Create and configure the web view"""
+        """Create and configure the web view with menu bar"""
+        # Create main window
+        self.main_window = QMainWindow()
+        self.main_window.setWindowTitle("San Beda Integration Tool")
+
+        # Create web view
         self.view = QWebEngineView()
 
         # Configure web engine settings
@@ -381,6 +387,16 @@ class IntegrationApp:
         self.channel.registerObject('bridge', self.bridge)
         self.view.page().setWebChannel(self.channel)
 
+        # Set web view as central widget
+        self.main_window.setCentralWidget(self.view)
+
+        # Enable downloads
+        profile = QWebEngineProfile.defaultProfile()
+        profile.downloadRequested.connect(self.handle_download)
+
+        # Create menu bar
+        self.create_menu_bar()
+
         # Load the frontend
         if DEV_MODE:
             # In dev mode, load from Vite dev server
@@ -394,11 +410,108 @@ class IntegrationApp:
         self.view.load(QUrl(url))
 
         # Window configuration
-        self.view.setWindowTitle("San Beda Integration Tool")
-        self.view.resize(1400, 900)
+        self.main_window.resize(1400, 900)
 
         # Show maximized
-        self.view.showMaximized()
+        self.main_window.showMaximized()
+
+    def create_menu_bar(self):
+        """Create the application menu bar"""
+        menubar = self.main_window.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu("File")
+
+        reload_action = QAction("Reload", self.main_window)
+        reload_action.setShortcut(QKeySequence("Ctrl+R"))
+        reload_action.triggered.connect(self.view.reload)
+        file_menu.addAction(reload_action)
+
+        file_menu.addSeparator()
+
+        quit_action = QAction("Quit", self.main_window)
+        quit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        quit_action.triggered.connect(self.app.quit)
+        file_menu.addAction(quit_action)
+
+        # View menu
+        view_menu = menubar.addMenu("View")
+
+        # Developer Tools (dev mode only)
+        if DEV_MODE:
+            devtools_action = QAction("Developer Tools", self.main_window)
+            devtools_action.setShortcut(QKeySequence("F12"))
+            devtools_action.triggered.connect(self.open_devtools)
+            view_menu.addAction(devtools_action)
+
+        zoom_in_action = QAction("Zoom In", self.main_window)
+        zoom_in_action.setShortcut(QKeySequence("Ctrl++"))
+        zoom_in_action.triggered.connect(lambda: self.view.setZoomFactor(self.view.zoomFactor() + 0.1))
+        view_menu.addAction(zoom_in_action)
+
+        zoom_out_action = QAction("Zoom Out", self.main_window)
+        zoom_out_action.setShortcut(QKeySequence("Ctrl+-"))
+        zoom_out_action.triggered.connect(lambda: self.view.setZoomFactor(self.view.zoomFactor() - 0.1))
+        view_menu.addAction(zoom_out_action)
+
+        reset_zoom_action = QAction("Reset Zoom", self.main_window)
+        reset_zoom_action.setShortcut(QKeySequence("Ctrl+0"))
+        reset_zoom_action.triggered.connect(lambda: self.view.setZoomFactor(1.0))
+        view_menu.addAction(reset_zoom_action)
+
+        # Help menu
+        help_menu = menubar.addMenu("Help")
+
+        about_action = QAction("About", self.main_window)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+    def handle_download(self, download):
+        """Handle file downloads from the web view"""
+        from PyQt6.QtWidgets import QFileDialog
+
+        # Get suggested filename
+        suggested_name = download.downloadFileName()
+        logger.info(f"Download requested: {suggested_name}")
+
+        # Ask user where to save
+        save_path, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Save File",
+            suggested_name,
+            "All Files (*)"
+        )
+
+        if save_path:
+            download.setDownloadFileName(os.path.basename(save_path))
+            download.setDownloadDirectory(os.path.dirname(save_path))
+            download.accept()
+            logger.info(f"Download accepted: {save_path}")
+        else:
+            download.cancel()
+            logger.info("Download cancelled by user")
+
+    def open_devtools(self):
+        """Open developer tools in a new window"""
+        if not hasattr(self, 'devtools_view'):
+            self.devtools_view = QWebEngineView()
+            self.devtools_view.setWindowTitle("Developer Tools")
+            self.devtools_view.resize(1200, 800)
+        self.view.page().setDevToolsPage(self.devtools_view.page())
+        self.devtools_view.show()
+        logger.info("Developer tools opened")
+
+    def show_about(self):
+        """Show about dialog"""
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.about(
+            self.main_window,
+            "About San Beda Integration Tool",
+            "San Beda Integration Tool v1.0.6\n\n"
+            "Bridge between San Beda on-premise timekeeping\n"
+            "and YAHSHUA cloud payroll.\n\n"
+            "© 2025 The Abba. All rights reserved."
+        )
 
     def run(self):
         """Run the application"""

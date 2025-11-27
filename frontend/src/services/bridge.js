@@ -174,6 +174,16 @@ class BridgeService {
       this.bridge.logMessage(message)
     }
   }
+
+  // ==================== SYSTEM LOG METHODS ====================
+
+  async getSystemLogFiles() {
+    return this.call('getSystemLogFiles')
+  }
+
+  async getSystemLogContent(filename) {
+    return this.call('getSystemLogContent', filename)
+  }
 }
 
 // Create singleton instance

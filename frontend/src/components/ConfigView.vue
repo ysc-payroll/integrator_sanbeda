@@ -197,6 +197,70 @@
         <span v-else>Saving...</span>
       </button>
     </div>
+
+    <!-- System Logs Section -->
+    <div class="card">
+      <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+        <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        System Logs
+      </h2>
+      <p class="text-sm text-gray-500 mb-4">View application logs for debugging and troubleshooting.</p>
+      <button @click="openLogModal" class="btn btn-secondary">
+        View System Logs
+      </button>
+    </div>
+
+    <!-- Log Modal -->
+    <div v-if="showLogModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black bg-opacity-50" @click="closeLogModal"></div>
+      <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[80vh] flex flex-col">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between p-4 border-b">
+          <h3 class="text-lg font-semibold">System Logs</h3>
+          <button @click="closeLogModal" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-4 flex-1 overflow-hidden flex flex-col">
+          <!-- Log File Selector -->
+          <div class="flex items-center gap-4 mb-4">
+            <select v-model="selectedLogFile" @change="loadLogContent" class="input w-64">
+              <option value="">Select a log file...</option>
+              <option v-for="file in logFiles" :key="file.filename" :value="file.filename">
+                {{ formatLogDate(file.date) }} ({{ formatFileSize(file.size) }})
+              </option>
+            </select>
+            <button @click="loadLogContent" :disabled="!selectedLogFile || loadingLog" class="btn btn-secondary">
+              <span v-if="!loadingLog">Refresh</span>
+              <span v-else>Loading...</span>
+            </button>
+            <button @click="downloadLog" :disabled="!selectedLogFile || !logContent" class="btn btn-secondary">
+              Download
+            </button>
+            <span v-if="logInfo" class="text-sm text-gray-500">
+              Showing {{ logInfo.showing_lines }} of {{ logInfo.total_lines }} lines
+            </span>
+          </div>
+
+          <!-- Log Content -->
+          <div class="flex-1 overflow-auto bg-gray-900 rounded-lg p-4">
+            <pre v-if="logContent" class="text-green-400 text-xs font-mono whitespace-pre-wrap">{{ logContent }}</pre>
+            <p v-else class="text-gray-500 text-center py-8">Select a log file to view its contents</p>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex justify-end p-4 border-t">
+          <button @click="closeLogModal" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -232,6 +296,14 @@ const loggingOut = ref(false)
 const pullPasswordSet = ref(false)
 const pullConnected = ref(false)
 const reconnectingPull = ref(false)
+
+// System logs state
+const showLogModal = ref(false)
+const logFiles = ref([])
+const selectedLogFile = ref('')
+const logContent = ref('')
+const logInfo = ref(null)
+const loadingLog = ref(false)
 
 const loadConfig = async () => {
   try {
@@ -363,6 +435,82 @@ const reconnectPull = async () => {
   } finally {
     reconnectingPull.value = false
   }
+}
+
+// System log functions
+const openLogModal = async () => {
+  showLogModal.value = true
+  selectedLogFile.value = ''
+  logContent.value = ''
+  logInfo.value = null
+
+  try {
+    const result = await bridgeService.getSystemLogFiles()
+    if (result.success) {
+      logFiles.value = result.data
+      // Auto-select first (most recent) file
+      if (logFiles.value.length > 0) {
+        selectedLogFile.value = logFiles.value[0].filename
+        await loadLogContent()
+      }
+    }
+  } catch (err) {
+    console.error('Error loading log files:', err)
+    error('Failed to load log files')
+  }
+}
+
+const closeLogModal = () => {
+  showLogModal.value = false
+}
+
+const loadLogContent = async () => {
+  if (!selectedLogFile.value) return
+
+  loadingLog.value = true
+  try {
+    const result = await bridgeService.getSystemLogContent(selectedLogFile.value)
+    if (result.success) {
+      logContent.value = result.data.content
+      logInfo.value = result.data
+    } else {
+      error(result.error || 'Failed to load log content')
+    }
+  } catch (err) {
+    console.error('Error loading log content:', err)
+    error('Failed to load log content')
+  } finally {
+    loadingLog.value = false
+  }
+}
+
+const formatLogDate = (dateStr) => {
+  // Convert YYYYMMDD to readable format
+  if (!dateStr || dateStr.length !== 8) return dateStr
+  const year = dateStr.substring(0, 4)
+  const month = dateStr.substring(4, 6)
+  const day = dateStr.substring(6, 8)
+  return `${year}-${month}-${day}`
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const downloadLog = () => {
+  if (!logContent.value || !selectedLogFile.value) return
+
+  const blob = new Blob([logContent.value], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = selectedLogFile.value
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 onMounted(async () => {

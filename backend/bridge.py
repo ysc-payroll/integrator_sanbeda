@@ -6,10 +6,20 @@ Provides QWebChannel bridge for communication between PyQt6 and Vue.js
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QThread, QMetaObject, Qt, Q_ARG
 import json
 import logging
+import os
+import sys
+import tempfile
 from datetime import datetime
 import threading
 
 logger = logging.getLogger(__name__)
+
+# Determine LOG_DIR (same logic as main.py to avoid circular import)
+IS_FROZEN = getattr(sys, 'frozen', False)
+if IS_FROZEN:
+    LOG_DIR = os.path.join(tempfile.gettempdir(), 'sanbeda_integration', 'system_logs')
+else:
+    LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'system_logs')
 
 class Bridge(QObject):
     """Bridge class for Python-JavaScript communication via QWebChannel"""
@@ -325,3 +335,63 @@ class Bridge(QObject):
     def emit_sync_progress(self, progress_dict):
         """Emit sync progress update to JavaScript"""
         self.syncProgressUpdated.emit(json.dumps(progress_dict))
+
+    # ==================== SYSTEM LOG METHODS ====================
+
+    @pyqtSlot(result=str)
+    def getSystemLogFiles(self):
+        """Get list of available system log files"""
+        try:
+            if not LOG_DIR or not os.path.exists(LOG_DIR):
+                return json.dumps({"success": True, "data": []})
+
+            files = []
+            for filename in sorted(os.listdir(LOG_DIR), reverse=True):
+                if filename.endswith('.log'):
+                    filepath = os.path.join(LOG_DIR, filename)
+                    files.append({
+                        "filename": filename,
+                        "date": filename.replace('.log', ''),
+                        "size": os.path.getsize(filepath)
+                    })
+
+            return json.dumps({"success": True, "data": files})
+        except Exception as e:
+            logger.error(f"Error getting system log files: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
+    @pyqtSlot(str, result=str)
+    def getSystemLogContent(self, filename):
+        """Get content of a specific log file (last 500 lines)"""
+        try:
+            if not LOG_DIR:
+                return json.dumps({"success": False, "error": "Log directory not configured"})
+
+            # Sanitize filename to prevent directory traversal
+            safe_filename = os.path.basename(filename)
+            if not safe_filename.endswith('.log'):
+                return json.dumps({"success": False, "error": "Invalid log file"})
+
+            filepath = os.path.join(LOG_DIR, safe_filename)
+
+            if not os.path.exists(filepath):
+                return json.dumps({"success": False, "error": "Log file not found"})
+
+            # Read last 500 lines
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+                last_lines = lines[-500:] if len(lines) > 500 else lines
+                content = ''.join(last_lines)
+
+            return json.dumps({
+                "success": True,
+                "data": {
+                    "filename": safe_filename,
+                    "content": content,
+                    "total_lines": len(lines),
+                    "showing_lines": len(last_lines)
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error reading system log: {e}")
+            return json.dumps({"success": False, "error": str(e)})
