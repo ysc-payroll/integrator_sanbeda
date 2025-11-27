@@ -337,7 +337,6 @@ const handlePushSync = async () => {
 
 // Handle progress updates from backend
 const handleProgressUpdate = (event) => {
-  console.log('Progress update received:', event.detail)
   const progress = event.detail
 
   if (progress.type === 'pull') {
@@ -378,7 +377,6 @@ onMounted(async () => {
   // Listen for sync completion
   window.addEventListener('syncCompleted', async (event) => {
     const data = event.detail
-    console.log('Sync completed:', data)
 
     // Handle pull completion
     if (data.type === 'pull') {
