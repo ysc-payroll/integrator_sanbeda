@@ -87,6 +87,33 @@ class Bridge(QObject):
             logger.error(f"Error retrying timesheet: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
+    @pyqtSlot(str, str, result=str)
+    def clearTimesheets(self, date_from, date_to):
+        """Clear timesheet records within a date range"""
+        try:
+            conn = self.database.get_connection()
+            cursor = conn.cursor()
+
+            # Delete timesheets within the date range
+            cursor.execute("""
+                DELETE FROM timesheet
+                WHERE date >= ? AND date <= ?
+            """, (date_from, date_to))
+
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Cleared {deleted_count} timesheet records from {date_from} to {date_to}")
+            return json.dumps({
+                "success": True,
+                "message": f"Deleted {deleted_count} timesheet records",
+                "deleted_count": deleted_count
+            })
+        except Exception as e:
+            logger.error(f"Error clearing timesheets: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
     # ==================== EMPLOYEE METHODS ====================
 
     @pyqtSlot(result=str)
@@ -101,37 +128,55 @@ class Bridge(QObject):
 
     # ==================== SYNC METHODS ====================
 
-    @pyqtSlot(result=str)
-    def startPullSync(self):
-        """Manually trigger pull sync from San Beda"""
-        try:
-            # Check if pull is configured
-            token = self.database.get_login_token()
-            if not token:
-                return json.dumps({
-                    "success": False,
-                    "error": "Pull not configured. Go to Configuration and click Reconnect."
-                })
+    @pyqtSlot(str, str, result=str)
+    def startPullSync(self, date_from, date_to):
+        """Manually trigger pull sync from San Beda with date range (runs in background thread)"""
+        # Check if pull is configured
+        token = self.database.get_login_token()
+        if not token:
+            return json.dumps({
+                "success": False,
+                "error": "Pull not configured. Go to Configuration and click Reconnect."
+            })
 
-            logger.info("Manual pull sync triggered from UI")
-            success, message, stats = self.pull_service.pull_data()
+        logger.info(f"Manual pull sync triggered from UI: {date_from} to {date_to}")
 
-            result = {
-                "success": success,
-                "message": message,
-                "stats": stats
-            }
+        # Start pull in background thread
+        def run_pull():
+            try:
+                # Progress callback to emit updates to frontend
+                def on_progress(progress_dict):
+                    logger.info(f"Pull progress: {progress_dict}")
+                    self.syncProgressUpdated.emit(json.dumps(progress_dict))
 
-            # Emit signal to update UI
-            self.syncCompleted.emit(json.dumps({
-                "type": "pull",
-                "result": result
-            }))
+                success, message, stats = self.pull_service.pull_data(
+                    date_from, date_to, progress_callback=on_progress
+                )
 
-            return json.dumps(result)
-        except Exception as e:
-            logger.error(f"Error in manual pull sync: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+                result = {
+                    "success": success,
+                    "message": message,
+                    "stats": stats
+                }
+
+                # Emit signal to update UI
+                self.syncCompleted.emit(json.dumps({
+                    "type": "pull",
+                    "result": result
+                }))
+
+            except Exception as e:
+                logger.error(f"Error in pull sync thread: {e}")
+                self.syncCompleted.emit(json.dumps({
+                    "type": "pull",
+                    "result": {"success": False, "error": str(e)}
+                }))
+
+        thread = threading.Thread(target=run_pull, daemon=True)
+        thread.start()
+
+        # Return immediately - results will come via signals
+        return json.dumps({"success": True, "message": "Pull sync started"})
 
     @pyqtSlot(result=str)
     def startPushSync(self):

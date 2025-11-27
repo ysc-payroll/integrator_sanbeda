@@ -121,6 +121,10 @@ class BridgeService {
     return this.call('retryFailedTimesheet', timesheetId)
   }
 
+  async clearTimesheets(dateFrom, dateTo) {
+    return this.call('clearTimesheets', dateFrom, dateTo)
+  }
+
   // ==================== EMPLOYEE METHODS ====================
 
   async getAllEmployees() {
@@ -129,8 +133,8 @@ class BridgeService {
 
   // ==================== SYNC METHODS ====================
 
-  async startPullSync() {
-    return this.call('startPullSync')
+  async startPullSync(dateFrom, dateTo) {
+    return this.call('startPullSync', dateFrom, dateTo)
   }
 
   async startPushSync() {

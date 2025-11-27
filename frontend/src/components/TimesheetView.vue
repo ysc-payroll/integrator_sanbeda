@@ -1,13 +1,73 @@
 <template>
   <div class="p-6 space-y-6">
+    <!-- Clear Timesheets Modal -->
+    <div v-if="showClearModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black bg-opacity-50" @click="closeClearModal"></div>
+      <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between p-4 border-b">
+          <h3 class="text-lg font-semibold text-red-600">Clear Timesheet Records</h3>
+          <button @click="closeClearModal" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-4 space-y-4">
+          <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+            <p class="text-sm text-red-700">
+              <strong>Warning:</strong> This will permanently delete timesheet records within the selected date range. This action cannot be undone.
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
+            <input
+              v-model="clearDateFrom"
+              type="date"
+              class="input w-full"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+            <input
+              v-model="clearDateTo"
+              type="date"
+              class="input w-full"
+            />
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex justify-end gap-2 p-4 border-t">
+          <button @click="closeClearModal" class="btn btn-secondary">Cancel</button>
+          <button @click="executeClear" :disabled="clearing" class="btn bg-red-600 text-white hover:bg-red-700">
+            <span v-if="!clearing">Delete Records</span>
+            <span v-else>Deleting...</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="flex items-center justify-between">
       <h1 class="text-3xl font-bold text-gray-900">Timesheet Records</h1>
-      <button @click="loadData" class="btn btn-secondary">
-        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        Refresh
-      </button>
+      <div class="flex gap-2">
+        <button @click="openClearModal" class="btn bg-red-100 text-red-700 hover:bg-red-200">
+          <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Clear Records
+        </button>
+        <button @click="loadData" class="btn btn-secondary">
+          <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -160,6 +220,46 @@ const searchQuery = ref('')
 const filterStatus = ref('all')
 const currentPage = ref(1)
 const pageSize = 50
+
+// Clear modal state
+const showClearModal = ref(false)
+const clearDateFrom = ref('')
+const clearDateTo = ref('')
+const clearing = ref(false)
+
+// Helper to get date in YYYY-MM-DD format
+const getDateString = (date) => {
+  return date.toISOString().split('T')[0]
+}
+
+const openClearModal = () => {
+  // Default: last 7 days
+  const today = new Date()
+  const weekAgo = new Date(today)
+  weekAgo.setDate(weekAgo.getDate() - 7)
+
+  clearDateFrom.value = getDateString(weekAgo)
+  clearDateTo.value = getDateString(today)
+  showClearModal.value = true
+}
+
+const closeClearModal = () => {
+  showClearModal.value = false
+}
+
+const executeClear = async () => {
+  clearing.value = true
+  try {
+    const result = await bridgeService.clearTimesheets(clearDateFrom.value, clearDateTo.value)
+    success(result.message)
+    showClearModal.value = false
+    await loadData()
+  } catch (err) {
+    error(`Failed to clear records: ${err.message}`)
+  } finally {
+    clearing.value = false
+  }
+}
 
 const filteredTimesheets = computed(() => {
   let filtered = timesheets.value

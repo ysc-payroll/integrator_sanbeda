@@ -5,6 +5,79 @@
     <!-- Push Progress Modal -->
     <SyncProgressModal :show="showProgressModal" :progress="pushProgress" />
 
+    <!-- Pull Date Range Modal -->
+    <div v-if="showPullDateModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black bg-opacity-50" @click="closePullDateModal"></div>
+      <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between p-4 border-b">
+          <h3 class="text-lg font-semibold">Pull Date Range</h3>
+          <button @click="closePullDateModal" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-4 space-y-4">
+          <!-- Date picker (shown when not loading) -->
+          <div v-if="!pullLoading">
+            <p class="text-sm text-gray-600 mb-4">Select the date range to pull attendance data from San Beda.</p>
+
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
+              <input
+                v-model="pullDateFrom"
+                type="date"
+                class="input w-full"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+              <input
+                v-model="pullDateTo"
+                type="date"
+                class="input w-full"
+              />
+            </div>
+          </div>
+
+          <!-- Progress indicator (shown when loading) -->
+          <div v-else class="py-4">
+            <div class="flex items-center justify-center mb-4">
+              <svg class="animate-spin h-8 w-8 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <p class="text-center text-gray-700 font-medium">Pulling from San Beda timekeeping API</p>
+            <p class="text-center text-sm text-gray-500 mt-1">{{ config?.pull_host || 'Unknown host' }}</p>
+            <p class="text-center text-sm text-gray-500 mt-2">
+              Fetching page {{ pullProgress.page }}...
+            </p>
+            <div class="mt-4 bg-gray-100 rounded-lg p-3 text-sm">
+              <div class="flex justify-between text-gray-600">
+                <span>Attendance records:</span>
+                <span class="font-medium">{{ pullProgress.records_fetched }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex justify-end gap-2 p-4 border-t">
+          <button @click="closePullDateModal" :disabled="pullLoading" class="btn btn-secondary">
+            {{ pullLoading ? 'Please wait...' : 'Cancel' }}
+          </button>
+          <button v-if="!pullLoading" @click="executePullSync" class="btn btn-primary">
+            Pull Data
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Sync Controls -->
     <div class="grid grid-cols-2 gap-6">
       <!-- Pull Sync Card -->
@@ -162,6 +235,34 @@ const pushProgress = ref({
   failed: 0
 })
 
+// Pull date picker modal state
+const showPullDateModal = ref(false)
+const pullDateFrom = ref('')
+const pullDateTo = ref('')
+
+// Pull progress state
+const pullProgress = ref({
+  page: 0,
+  records_fetched: 0,
+  records_processed: 0,
+  status: ''
+})
+
+// Helper to get date in YYYY-MM-DD format
+const getDateString = (date) => {
+  return date.toISOString().split('T')[0]
+}
+
+// Initialize default dates (yesterday and today)
+const initPullDates = () => {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  pullDateFrom.value = getDateString(yesterday)
+  pullDateTo.value = getDateString(today)
+}
+
 const loadData = async () => {
   try {
     // Load stats
@@ -184,16 +285,32 @@ const loadData = async () => {
   }
 }
 
-const handlePullSync = async () => {
+const handlePullSync = () => {
+  // Open date picker modal with default dates
+  initPullDates()
+  showPullDateModal.value = true
+}
+
+const closePullDateModal = () => {
+  showPullDateModal.value = false
+}
+
+const executePullSync = async () => {
   pullLoading.value = true
+  // Reset progress
+  pullProgress.value = {
+    page: 0,
+    records_fetched: 0,
+    records_processed: 0,
+    status: 'starting'
+  }
   try {
-    const result = await bridgeService.startPullSync()
-    success(result.message)
-    await loadData()
+    // This returns immediately - actual result comes via syncCompleted signal
+    await bridgeService.startPullSync(pullDateFrom.value, pullDateTo.value)
   } catch (err) {
     error(`Pull sync failed: ${err.message}`)
-  } finally {
     pullLoading.value = false
+    showPullDateModal.value = false
   }
 }
 
@@ -222,12 +339,25 @@ const handlePushSync = async () => {
 const handleProgressUpdate = (event) => {
   console.log('Progress update received:', event.detail)
   const progress = event.detail
-  pushProgress.value = {
-    batch_current: progress.batch_current || 0,
-    batch_total: progress.batch_total || 0,
-    batch_size: progress.batch_size || 0,
-    success: progress.success || 0,
-    failed: progress.failed || 0
+
+  if (progress.type === 'pull') {
+    // Handle pull progress
+    pullProgress.value = {
+      page: progress.page || 0,
+      records_fetched: progress.records_fetched || 0,
+      records_processed: progress.records_processed || 0,
+      records_success: progress.records_success || 0,
+      status: progress.status || ''
+    }
+  } else {
+    // Handle push progress
+    pushProgress.value = {
+      batch_current: progress.batch_current || 0,
+      batch_total: progress.batch_total || 0,
+      batch_size: progress.batch_size || 0,
+      success: progress.success || 0,
+      failed: progress.failed || 0
+    }
   }
 }
 
@@ -249,6 +379,18 @@ onMounted(async () => {
   window.addEventListener('syncCompleted', async (event) => {
     const data = event.detail
     console.log('Sync completed:', data)
+
+    // Handle pull completion
+    if (data.type === 'pull') {
+      pullLoading.value = false
+      showPullDateModal.value = false
+
+      if (data.result.success) {
+        success(data.result.message)
+      } else {
+        error(data.result.error || 'Pull sync failed')
+      }
+    }
 
     // Handle push completion
     if (data.type === 'push') {

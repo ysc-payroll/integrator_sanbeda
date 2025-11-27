@@ -46,9 +46,14 @@ class PullService:
             logger.error(f"Connection test error: {e}")
             return False, f"Error: {str(e)}"
 
-    def pull_data(self):
+    def pull_data(self, date_from=None, date_to=None, progress_callback=None):
         """
         Pull timesheet data from San Beda timekeeping system
+
+        Args:
+            date_from: Start date in "YYYY-MM-DD" format (optional, defaults to yesterday)
+            date_to: End date in "YYYY-MM-DD" format (optional, defaults to today)
+            progress_callback: Optional callback function to report progress
 
         Returns:
             tuple: (success: bool, message: str, stats: dict)
@@ -74,18 +79,17 @@ class PullService:
             # Set token in headers
             self.session.headers['X-Subject-Token'] = login_token
 
-            # Calculate date range (last 7 days if no last_pull_at)
-            last_pull = config.get('last_pull_at')
-            if last_pull:
-                start_time = datetime.fromisoformat(last_pull)
+            # Calculate date range
+            if date_from and date_to:
+                # Use provided dates
+                start_time_str = f"{date_from} 00:00:00"
+                end_time_str = f"{date_to} 23:59:59"
             else:
-                start_time = datetime.now() - timedelta(days=7)
-
-            end_time = datetime.now()
-
-            # Format dates for San Beda API (yyyy-MM-dd HH:mm:ss)
-            start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
-            end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                # Default: yesterday 00:00:00 to today 23:59:59
+                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                today = datetime.now().strftime("%Y-%m-%d")
+                start_time_str = f"{yesterday} 00:00:00"
+                end_time_str = f"{today} 23:59:59"
 
             logger.info(f"Pulling data from {start_time_str} to {end_time_str}")
 
@@ -96,6 +100,16 @@ class PullService:
 
             while True:
                 logger.info(f"Fetching page {page}...")
+
+                # Emit progress update
+                if progress_callback:
+                    progress_callback({
+                        "type": "pull",
+                        "status": "fetching",
+                        "page": page,
+                        "records_fetched": total_records,
+                        "records_processed": stats['processed']
+                    })
 
                 # Build request parameters
                 params = {
@@ -169,6 +183,17 @@ class PullService:
                         stats['failed'] += 1
 
                 total_records += len(page_data)
+
+                # Emit progress update after processing page
+                if progress_callback:
+                    progress_callback({
+                        "type": "pull",
+                        "status": "processing",
+                        "page": page,
+                        "records_fetched": total_records,
+                        "records_processed": stats['processed'],
+                        "records_success": stats['success']
+                    })
 
                 # Check if we should continue pagination
                 # San Beda API doesn't provide clear pagination info, so we stop when page is not full
