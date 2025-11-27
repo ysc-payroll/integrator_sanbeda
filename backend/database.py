@@ -5,17 +5,47 @@ SQLite database for storing timesheet data and sync status
 
 import sqlite3
 import json
+import sys
+import os
 from datetime import datetime
 from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Determine if running as frozen executable
+IS_FROZEN = getattr(sys, 'frozen', False)
+
+def get_app_data_dir():
+    """Get persistent app data directory based on platform"""
+    if IS_FROZEN:
+        # Use platform-specific app data directory for packaged app
+        if sys.platform == 'win32':
+            # Windows: C:\Users\<user>\AppData\Local\SanBedaIntegration
+            base = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+            return os.path.join(base, 'SanBedaIntegration')
+        elif sys.platform == 'darwin':
+            # macOS: ~/Library/Application Support/SanBedaIntegration
+            return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'SanBedaIntegration')
+        else:
+            # Linux: ~/.local/share/SanBedaIntegration
+            return os.path.join(os.path.expanduser('~'), '.local', 'share', 'SanBedaIntegration')
+    else:
+        # Development: use local database folder
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database')
+
 class Database:
-    def __init__(self, db_path="database/sanbeda_integration.db"):
+    def __init__(self, db_path=None):
         """Initialize database connection and create tables if needed"""
-        self.db_path = Path(__file__).parent / db_path
+        if db_path:
+            self.db_path = Path(db_path)
+        else:
+            app_data_dir = get_app_data_dir()
+            os.makedirs(app_data_dir, exist_ok=True)
+            self.db_path = Path(app_data_dir) / 'sanbeda_integration.db'
+
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Database path: {self.db_path}")
         self.init_database()
 
     def get_connection(self):
