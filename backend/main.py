@@ -325,6 +325,9 @@ class IntegrationApp:
             # Initialize scheduler
             self.scheduler = SyncScheduler(self.pull_service, self.push_service, self.database)
 
+            # Connect scheduler to bridge
+            self.bridge.set_scheduler(self.scheduler)
+
             self.splash.showMessage("Starting web engine...",
                 Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
                 QColor("#93c5fd"))

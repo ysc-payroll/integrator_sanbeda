@@ -95,11 +95,11 @@ class Database:
                 )
             """)
 
-            # Sync logs table (track pull/push/config operations)
+            # Sync logs table (track pull/push/config/other operations)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sync_type TEXT NOT NULL CHECK(sync_type IN ('pull', 'push', 'config')),
+                    sync_type TEXT NOT NULL CHECK(sync_type IN ('pull', 'push', 'config', 'other')),
                     status TEXT NOT NULL CHECK(status IN ('started', 'success', 'error')),
                     records_processed INTEGER DEFAULT 0,
                     records_success INTEGER DEFAULT 0,
@@ -184,6 +184,43 @@ class Database:
                 cursor.execute("ALTER TABLE api_config ADD COLUMN push_user_logged TEXT")
             except:
                 pass
+
+            # Migration: Update sync_logs table to allow 'other' sync_type
+            # Check if we need to migrate by trying to insert and rollback
+            try:
+                cursor.execute("INSERT INTO sync_logs (sync_type, status, started_at) VALUES ('other', 'success', datetime('now'))")
+                # If it works, delete the test record
+                cursor.execute("DELETE FROM sync_logs WHERE sync_type = 'other' AND rowid = last_insert_rowid()")
+            except sqlite3.IntegrityError:
+                # Need to migrate - recreate table with new constraint
+                logger.info("Migrating sync_logs table to support 'other' sync_type")
+                cursor.execute("ALTER TABLE sync_logs RENAME TO sync_logs_old")
+                cursor.execute("""
+                    CREATE TABLE sync_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sync_type TEXT NOT NULL CHECK(sync_type IN ('pull', 'push', 'config', 'other')),
+                        status TEXT NOT NULL CHECK(status IN ('started', 'success', 'error')),
+                        records_processed INTEGER DEFAULT 0,
+                        records_success INTEGER DEFAULT 0,
+                        records_failed INTEGER DEFAULT 0,
+                        error_message TEXT,
+                        started_at DATETIME NOT NULL,
+                        completed_at DATETIME,
+                        metadata TEXT
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO sync_logs (id, sync_type, status, records_processed, records_success,
+                        records_failed, error_message, started_at, completed_at, metadata)
+                    SELECT id, sync_type, status, records_processed, records_success,
+                        records_failed, error_message, started_at, completed_at, metadata
+                    FROM sync_logs_old
+                """)
+                cursor.execute("DROP TABLE sync_logs_old")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_logs_type ON sync_logs(sync_type)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_logs_status ON sync_logs(status)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_logs_started ON sync_logs(started_at)")
+                logger.info("sync_logs table migration completed")
 
             # Insert default config if not exists
             cursor.execute("SELECT COUNT(*) as count FROM api_config WHERE id = 1")
@@ -308,7 +345,7 @@ class Database:
                 SELECT t.*, e.name as employee_name, e.employee_code
                 FROM timesheet t
                 JOIN employee e ON t.employee_id = e.id
-                ORDER BY t.created_at DESC
+                ORDER BY t.date DESC, t.time DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset))
             return [dict(row) for row in cursor.fetchall()]
@@ -455,6 +492,25 @@ class Database:
         except Exception as e:
             conn.rollback()
             logger.error(f"Error logging config change: {e}")
+            raise
+        finally:
+            conn.close()
+
+    def log_other_event(self, message, status="success"):
+        """Log other system events (cleanup, maintenance, etc.)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            now = datetime.now()
+            cursor.execute("""
+                INSERT INTO sync_logs (sync_type, status, started_at, completed_at, error_message)
+                VALUES ('other', ?, ?, ?, ?)
+            """, (status, now, now, message))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error logging other event: {e}")
             raise
         finally:
             conn.close()

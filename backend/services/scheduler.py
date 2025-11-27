@@ -7,9 +7,12 @@ import schedule
 import threading
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# Records older than this will be auto-deleted
+CLEANUP_DAYS = 60
 
 
 class SyncScheduler:
@@ -70,6 +73,10 @@ class SyncScheduler:
                 schedule.every(push_interval).minutes.do(self.run_push_sync)
                 logger.info(f"Push sync scheduled every {push_interval} minutes")
 
+            # Schedule daily cleanup of old records (runs at 2:00 AM)
+            schedule.every().day.at("02:00").do(self.run_cleanup)
+            logger.info(f"Cleanup scheduled daily at 02:00 AM (deletes records older than {CLEANUP_DAYS} days)")
+
         except Exception as e:
             logger.error(f"Error updating schedules: {e}")
 
@@ -119,3 +126,40 @@ class SyncScheduler:
         """Manually trigger push sync immediately"""
         logger.info("Manual push sync triggered")
         threading.Thread(target=self.run_push_sync, daemon=True).start()
+
+    def run_cleanup(self):
+        """Delete timesheet records older than CLEANUP_DAYS"""
+        logger.info(f"Scheduled cleanup starting - deleting records older than {CLEANUP_DAYS} days")
+        try:
+            cutoff_date = (datetime.now() - timedelta(days=CLEANUP_DAYS)).strftime("%Y-%m-%d")
+
+            conn = self.database.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                DELETE FROM timesheet
+                WHERE date < ?
+            """, (cutoff_date,))
+
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            # Log the cleanup event
+            message = f"Auto-cleanup: deleted {deleted_count} records older than {cutoff_date}"
+            self.database.log_other_event(message)
+
+            if deleted_count > 0:
+                logger.info(f"Cleanup completed: deleted {deleted_count} records older than {cutoff_date}")
+            else:
+                logger.info(f"Cleanup completed: no records older than {cutoff_date} found")
+
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}", exc_info=True)
+            # Log the error
+            self.database.log_other_event(f"Auto-cleanup failed: {str(e)}", status="error")
+
+    def trigger_cleanup_now(self):
+        """Manually trigger cleanup immediately"""
+        logger.info("Manual cleanup triggered")
+        threading.Thread(target=self.run_cleanup, daemon=True).start()

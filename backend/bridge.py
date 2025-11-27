@@ -29,12 +29,17 @@ class Bridge(QObject):
     syncProgressUpdated = pyqtSignal(str)  # Emits JSON string with progress
     syncCompleted = pyqtSignal(str)  # Emits JSON string with results
 
-    def __init__(self, database, pull_service, push_service):
+    def __init__(self, database, pull_service, push_service, scheduler=None):
         super().__init__()
         self.database = database
         self.pull_service = pull_service
         self.push_service = push_service
+        self.scheduler = scheduler
         logger.info("Bridge initialized")
+
+    def set_scheduler(self, scheduler):
+        """Set the scheduler reference (called after scheduler is created)"""
+        self.scheduler = scheduler
 
     # ==================== TIMESHEET METHODS ====================
 
@@ -87,27 +92,35 @@ class Bridge(QObject):
             logger.error(f"Error retrying timesheet: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
-    @pyqtSlot(str, str, result=str)
-    def clearTimesheets(self, date_from, date_to):
+    @pyqtSlot(str, str, bool, result=str)
+    def clearTimesheets(self, date_from, date_to, only_synced=True):
         """Clear timesheet records within a date range"""
         try:
             conn = self.database.get_connection()
             cursor = conn.cursor()
 
             # Delete timesheets within the date range
-            cursor.execute("""
-                DELETE FROM timesheet
-                WHERE date >= ? AND date <= ?
-            """, (date_from, date_to))
+            if only_synced:
+                cursor.execute("""
+                    DELETE FROM timesheet
+                    WHERE date >= ? AND date <= ?
+                    AND backend_timesheet_id IS NOT NULL
+                """, (date_from, date_to))
+            else:
+                cursor.execute("""
+                    DELETE FROM timesheet
+                    WHERE date >= ? AND date <= ?
+                """, (date_from, date_to))
 
             deleted_count = cursor.rowcount
             conn.commit()
             conn.close()
 
-            logger.info(f"Cleared {deleted_count} timesheet records from {date_from} to {date_to}")
+            filter_text = "synced " if only_synced else ""
+            logger.info(f"Cleared {deleted_count} {filter_text}timesheet records from {date_from} to {date_to}")
             return json.dumps({
                 "success": True,
-                "message": f"Deleted {deleted_count} timesheet records",
+                "message": f"Deleted {deleted_count} {filter_text}timesheet records",
                 "deleted_count": deleted_count
             })
         except Exception as e:
@@ -372,6 +385,19 @@ class Bridge(QObject):
     def logMessage(self, message):
         """Log message from JavaScript"""
         logger.info(f"[JS] {message}")
+
+    @pyqtSlot(result=str)
+    def triggerCleanup(self):
+        """Manually trigger the cleanup of old records"""
+        try:
+            if self.scheduler:
+                self.scheduler.trigger_cleanup_now()
+                return json.dumps({"success": True, "message": "Cleanup triggered"})
+            else:
+                return json.dumps({"success": False, "error": "Scheduler not initialized"})
+        except Exception as e:
+            logger.error(f"Error triggering cleanup: {e}")
+            return json.dumps({"success": False, "error": str(e)})
 
     def emit_sync_status(self, status_dict):
         """Emit sync status update to JavaScript"""

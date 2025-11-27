@@ -121,8 +121,8 @@ class BridgeService {
     return this.call('retryFailedTimesheet', timesheetId)
   }
 
-  async clearTimesheets(dateFrom, dateTo) {
-    return this.call('clearTimesheets', dateFrom, dateTo)
+  async clearTimesheets(dateFrom, dateTo, onlySynced = true) {
+    return this.call('clearTimesheets', dateFrom, dateTo, onlySynced)
   }
 
   // ==================== EMPLOYEE METHODS ====================
@@ -177,6 +177,10 @@ class BridgeService {
     if (this.isReady && this.bridge) {
       this.bridge.logMessage(message)
     }
+  }
+
+  async triggerCleanup() {
+    return this.call('triggerCleanup')
   }
 
   // ==================== SYSTEM LOG METHODS ====================

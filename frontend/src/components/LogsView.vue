@@ -2,12 +2,20 @@
   <div class="p-6 space-y-6">
     <div class="flex items-center justify-between">
       <h1 class="text-3xl font-bold text-gray-900">Sync Logs</h1>
-      <button @click="loadLogs" class="btn btn-secondary">
-        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        Refresh
-      </button>
+      <div class="flex gap-2">
+        <button @click="runCleanup" :disabled="cleanupRunning" class="btn btn-warning">
+          <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          {{ cleanupRunning ? 'Running...' : 'Run Cleanup Now' }}
+        </button>
+        <button @click="loadLogs" class="btn btn-secondary">
+          <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -18,6 +26,7 @@
           <option value="pull">Pull</option>
           <option value="push">Push</option>
           <option value="config">Config</option>
+          <option value="other">Other</option>
         </select>
         <select v-model="filterStatus" class="input w-48">
           <option value="all">All Status</option>
@@ -68,6 +77,7 @@
                     'badge',
                     log.sync_type === 'pull' ? 'badge-info' :
                     log.sync_type === 'push' ? 'badge-success' :
+                    log.sync_type === 'other' ? 'badge-warning' :
                     'badge-secondary'
                   ]"
                 >
@@ -87,7 +97,7 @@
                 </span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <div v-if="log.sync_type === 'config'" class="text-gray-500">
+                <div v-if="log.sync_type === 'config' || log.sync_type === 'other'" class="text-gray-500">
                   -
                 </div>
                 <div v-else class="flex flex-col">
@@ -129,12 +139,13 @@ import { ref, computed, onMounted } from 'vue'
 import bridgeService from '../services/bridge'
 import { useToast } from '../composables/useToast'
 
-const { error } = useToast()
+const { success, error } = useToast()
 
 const logs = ref([])
 const loading = ref(false)
 const filterType = ref('all')
 const filterStatus = ref('all')
+const cleanupRunning = ref(false)
 
 const filteredLogs = computed(() => {
   let filtered = logs.value
@@ -160,6 +171,23 @@ const loadLogs = async () => {
     error('Failed to load sync logs')
   } finally {
     loading.value = false
+  }
+}
+
+const runCleanup = async () => {
+  cleanupRunning.value = true
+  try {
+    await bridgeService.triggerCleanup()
+    success('Cleanup triggered - check logs for results')
+    // Wait a moment then refresh logs
+    setTimeout(async () => {
+      await loadLogs()
+      cleanupRunning.value = false
+    }, 2000)
+  } catch (err) {
+    console.error('Error running cleanup:', err)
+    error('Failed to run cleanup')
+    cleanupRunning.value = false
   }
 }
 

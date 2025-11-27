@@ -39,6 +39,18 @@
               class="input w-full"
             />
           </div>
+
+          <div class="flex items-center">
+            <input
+              id="onlySynced"
+              v-model="clearOnlySynced"
+              type="checkbox"
+              class="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+            />
+            <label for="onlySynced" class="ml-2 text-sm text-gray-700">
+              Only delete synced records
+            </label>
+          </div>
         </div>
 
         <!-- Modal Footer -->
@@ -72,13 +84,29 @@
 
     <!-- Filters -->
     <div class="card">
-      <div class="flex gap-4 items-center">
-        <div class="flex-1">
+      <div class="flex gap-4 items-center flex-wrap">
+        <div class="flex-1 min-w-[200px]">
           <input
             v-model="searchQuery"
             type="text"
             placeholder="Search by employee name or ID..."
             class="input"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-600">From:</label>
+          <input
+            v-model="filterDateFrom"
+            type="date"
+            class="input w-40"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-600">To:</label>
+          <input
+            v-model="filterDateTo"
+            type="date"
+            class="input w-40"
           />
         </div>
         <select v-model="filterStatus" class="input w-48">
@@ -116,6 +144,9 @@
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Sync ID
+              </th>
+              <th v-if="filterStatus === 'error'" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Error Message
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
@@ -163,6 +194,11 @@
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                 {{ entry.sync_id }}
               </td>
+              <td v-if="filterStatus === 'error'" class="px-6 py-4 text-sm text-red-600 max-w-md">
+                <div class="truncate" :title="entry.sync_error_message">
+                  {{ entry.sync_error_message }}
+                </div>
+              </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">
                 <button
                   v-if="entry.sync_error_message"
@@ -188,18 +224,35 @@
         </div>
         <div class="flex gap-2">
           <button
+            @click="currentPage = 1"
+            :disabled="currentPage === 1"
+            class="btn btn-secondary"
+          >
+            First
+          </button>
+          <button
             @click="currentPage--"
             :disabled="currentPage === 1"
             class="btn btn-secondary"
           >
             Previous
           </button>
+          <span class="px-3 py-2 text-sm text-gray-600">
+            Page {{ currentPage }} of {{ totalPages }}
+          </span>
           <button
             @click="currentPage++"
             :disabled="currentPage === totalPages"
             class="btn btn-secondary"
           >
             Next
+          </button>
+          <button
+            @click="currentPage = totalPages"
+            :disabled="currentPage === totalPages"
+            class="btn btn-secondary"
+          >
+            Last
           </button>
         </div>
       </div>
@@ -208,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import bridgeService from '../services/bridge'
 import { useToast } from '../composables/useToast'
 
@@ -217,14 +270,32 @@ const { success, error } = useToast()
 const timesheets = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
-const filterStatus = ref('all')
+const filterStatus = ref('pending')
+const filterDateFrom = ref('')
+const filterDateTo = ref('')
 const currentPage = ref(1)
 const pageSize = 50
+
+// Reset to page 1 when any filter changes
+watch([searchQuery, filterStatus, filterDateFrom, filterDateTo], () => {
+  currentPage.value = 1
+})
+
+// Initialize date filters (30 days ago to today)
+const initDateFilters = () => {
+  const today = new Date()
+  const thirtyDaysAgo = new Date(today)
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+  filterDateFrom.value = thirtyDaysAgo.toISOString().split('T')[0]
+  filterDateTo.value = today.toISOString().split('T')[0]
+}
 
 // Clear modal state
 const showClearModal = ref(false)
 const clearDateFrom = ref('')
 const clearDateTo = ref('')
+const clearOnlySynced = ref(true)
 const clearing = ref(false)
 
 // Helper to get date in YYYY-MM-DD format
@@ -250,7 +321,7 @@ const closeClearModal = () => {
 const executeClear = async () => {
   clearing.value = true
   try {
-    const result = await bridgeService.clearTimesheets(clearDateFrom.value, clearDateTo.value)
+    const result = await bridgeService.clearTimesheets(clearDateFrom.value, clearDateTo.value, clearOnlySynced.value)
     success(result.message)
     showClearModal.value = false
     await loadData()
@@ -263,6 +334,14 @@ const executeClear = async () => {
 
 const filteredTimesheets = computed(() => {
   let filtered = timesheets.value
+
+  // Filter by date range
+  if (filterDateFrom.value) {
+    filtered = filtered.filter(t => t.date >= filterDateFrom.value)
+  }
+  if (filterDateTo.value) {
+    filtered = filtered.filter(t => t.date <= filterDateTo.value)
+  }
 
   // Filter by status
   if (filterStatus.value === 'synced') {
@@ -320,6 +399,9 @@ const retrySync = async (timesheetId) => {
 }
 
 onMounted(async () => {
+  // Initialize date filters
+  initDateFilters()
+
   await bridgeService.whenReady()
   await loadData()
 
