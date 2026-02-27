@@ -110,7 +110,7 @@ def show_native_splash():
             # Version
             version_label = tk.Label(
                 _tk_root,
-                text="Version 1.0.11",
+                text="Version 1.0.12",
                 font=("Arial", 9),
                 fg="#60a5fa",
                 bg="#1e40af"
@@ -261,7 +261,7 @@ def create_splash_pixmap():
     font = QFont("Arial", 9)
     painter.setFont(font)
     painter.setPen(QColor("#60a5fa"))
-    painter.drawText(pixmap.rect().adjusted(0, 200, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Version 1.0.11")
+    painter.drawText(pixmap.rect().adjusted(0, 200, 0, 0), Qt.AlignmentFlag.AlignHCenter, "Version 1.0.12")
 
     painter.end()
     return pixmap
