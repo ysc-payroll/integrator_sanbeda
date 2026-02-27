@@ -71,7 +71,7 @@ class PushService:
             response = self.session.post(
                 auth_url,
                 json=payload,
-                timeout=30
+                timeout=(10, 30)
             )
 
             if response.status_code == 200:
@@ -357,7 +357,7 @@ class PushService:
                 YAHSHUA_SYNC_URL,
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=(10, 60)
             )
 
             try:
@@ -388,7 +388,7 @@ class PushService:
                     YAHSHUA_SYNC_URL,
                     headers=headers,
                     json=payload,
-                    timeout=60
+                    timeout=(10, 60)
                 )
                 if retry_response.status_code == 200:
                     result = retry_response.json()

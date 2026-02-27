@@ -55,7 +55,7 @@ import ToastNotification from './components/ToastNotification.vue'
 import bridgeService from './services/bridge'
 
 const currentView = ref('dashboard')
-const appVersion = ref('1.0.6')
+const appVersion = ref('1.0.11')
 
 // Icon components (SVG)
 const DashboardIcon = () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [

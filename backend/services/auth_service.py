@@ -125,7 +125,7 @@ class AuthService:
             response1 = self.session.post(
                 auth_url,
                 json=payload_step1,
-                timeout=30
+                timeout=(10, 30)
             )
 
             # If we get 200, try to get loginToken directly (simple auth)
@@ -177,7 +177,7 @@ class AuthService:
                 response2 = self.session.post(
                     auth_url,
                     json=payload_step2,
-                    timeout=30
+                    timeout=(10, 30)
                 )
 
                 if response2.status_code != 200:

@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Records older than this will be auto-deleted
 CLEANUP_DAYS = 180
 
+# Watchdog checks scheduler health every this many seconds
+WATCHDOG_INTERVAL = 120
+
 
 class SyncScheduler:
     """Scheduler for automated sync operations"""
@@ -27,6 +30,8 @@ class SyncScheduler:
         self.database = database
         self.running = False
         self.thread = None
+        self.watchdog_thread = None
+        self.restart_count = 0
 
     def start(self):
         """Start the scheduler"""
@@ -41,6 +46,14 @@ class SyncScheduler:
         self.update_schedules()
 
         # Start scheduler thread
+        self._start_scheduler_thread()
+
+        # Start watchdog thread
+        self.watchdog_thread = threading.Thread(target=self._run_watchdog, daemon=True)
+        self.watchdog_thread.start()
+
+    def _start_scheduler_thread(self):
+        """Start or restart the scheduler thread"""
         self.thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self.thread.start()
 
@@ -96,29 +109,61 @@ class SyncScheduler:
 
         logger.info("Scheduler loop stopped")
 
+    def _run_watchdog(self):
+        """Monitor the scheduler thread and restart it if it dies"""
+        logger.info("Scheduler watchdog started")
+
+        while self.running:
+            time.sleep(WATCHDOG_INTERVAL)
+
+            if not self.running:
+                break
+
+            if self.thread is None or not self.thread.is_alive():
+                self.restart_count += 1
+                logger.warning(
+                    f"Watchdog: Scheduler thread died. Restarting... (restart #{self.restart_count})"
+                )
+
+                # Re-setup schedules in case they were lost
+                self.update_schedules()
+                self._start_scheduler_thread()
+
+                logger.info("Watchdog: Scheduler thread restarted successfully")
+
+        logger.info("Scheduler watchdog stopped")
+
     def run_pull_sync(self):
-        """Execute pull sync"""
+        """Execute pull sync in a separate thread to avoid blocking the scheduler"""
         logger.info("Scheduled pull sync starting")
-        try:
-            success, message, stats = self.pull_service.pull_data()
-            if success:
-                logger.info(f"Scheduled pull sync completed: {message}")
-            else:
-                logger.error(f"Scheduled pull sync failed: {message}")
-        except Exception as e:
-            logger.error(f"Scheduled pull sync error: {e}", exc_info=True)
+
+        def _pull():
+            try:
+                success, message, stats = self.pull_service.pull_data()
+                if success:
+                    logger.info(f"Scheduled pull sync completed: {message}")
+                else:
+                    logger.error(f"Scheduled pull sync failed: {message}")
+            except Exception as e:
+                logger.error(f"Scheduled pull sync error: {e}", exc_info=True)
+
+        threading.Thread(target=_pull, daemon=True).start()
 
     def run_push_sync(self):
-        """Execute push sync"""
+        """Execute push sync in a separate thread to avoid blocking the scheduler"""
         logger.info("Scheduled push sync starting")
-        try:
-            success, message, stats = self.push_service.push_data()
-            if success:
-                logger.info(f"Scheduled push sync completed: {message}")
-            else:
-                logger.error(f"Scheduled push sync failed: {message}")
-        except Exception as e:
-            logger.error(f"Scheduled push sync error: {e}", exc_info=True)
+
+        def _push():
+            try:
+                success, message, stats = self.push_service.push_data()
+                if success:
+                    logger.info(f"Scheduled push sync completed: {message}")
+                else:
+                    logger.error(f"Scheduled push sync failed: {message}")
+            except Exception as e:
+                logger.error(f"Scheduled push sync error: {e}", exc_info=True)
+
+        threading.Thread(target=_push, daemon=True).start()
 
     def trigger_pull_now(self):
         """Manually trigger pull sync immediately"""

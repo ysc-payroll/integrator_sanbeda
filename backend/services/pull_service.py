@@ -126,7 +126,7 @@ class PullService:
                 url = f"http://{host}/brms/api/v1.0/attendance/record-info-report/page?{urlencode(params)}"
 
                 # Make API request
-                response = self.session.get(url, timeout=30)
+                response = self.session.get(url, timeout=(10, 30))
 
                 if response.status_code == 401:
                     # Token expired, re-authenticate
@@ -136,7 +136,7 @@ class PullService:
                     self.session.headers['X-Subject-Token'] = login_token
 
                     # Retry request
-                    response = self.session.get(url, timeout=30)
+                    response = self.session.get(url, timeout=(10, 30))
 
                 if response.status_code != 200:
                     error_msg = f"Pull failed: HTTP {response.status_code} - {response.text}"
