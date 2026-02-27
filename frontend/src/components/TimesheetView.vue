@@ -145,12 +145,6 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Sync ID
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Pulled At
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Synced At
-              </th>
               <th v-if="filterStatus === 'error'" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Error Message
               </th>
@@ -161,8 +155,9 @@
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr v-for="entry in paginatedTimesheets" :key="entry.id">
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                {{ entry.date }} {{ entry.time }}
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-900">{{ entry.date }} {{ entry.time }}</div>
+                <div class="text-xs italic text-gray-400">Pulled: {{ entry.created_at || '-' }}</div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900">{{ entry.employee_name }}</div>
@@ -197,14 +192,9 @@
                   Pending
                 </span>
               </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                {{ entry.sync_id }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ entry.created_at || '-' }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ entry.synced_at || '-' }}
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm text-gray-500 font-mono">{{ entry.sync_id }}</div>
+                <div class="text-xs italic text-gray-400">Synced: {{ entry.synced_at || '-' }}</div>
               </td>
               <td v-if="filterStatus === 'error'" class="px-6 py-4 text-sm text-red-600 max-w-md">
                 <div class="truncate" :title="entry.sync_error_message">
