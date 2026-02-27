@@ -363,7 +363,7 @@ class Database:
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN backend_timesheet_id IS NOT NULL THEN 1 ELSE 0 END) as synced,
-                    SUM(CASE WHEN backend_timesheet_id IS NULL THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN backend_timesheet_id IS NULL AND sync_error_message IS NULL THEN 1 ELSE 0 END) as pending,
                     SUM(CASE WHEN sync_error_message IS NOT NULL THEN 1 ELSE 0 END) as errors
                 FROM timesheet
             """)
@@ -665,6 +665,27 @@ class Database:
         """Get current YAHSHUA push token"""
         config = self.get_api_config()
         return config.get('push_token') if config else None
+
+    def retry_all_failed_timesheets(self, date_from, date_to):
+        """Clear sync errors for all failed timesheets in date range so they re-queue for push"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE timesheet
+                SET sync_error_message = NULL
+                WHERE date >= ?
+                  AND date <= ?
+                  AND sync_error_message IS NOT NULL
+            """, (date_from, date_to))
+            conn.commit()
+            return cursor.rowcount
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error retrying all failed timesheets: {e}")
+            raise
+        finally:
+            conn.close()
 
     # ==================== REPORT METHODS ====================
 

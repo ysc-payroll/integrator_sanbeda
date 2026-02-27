@@ -419,6 +419,21 @@ class Bridge(QObject):
         """Emit sync progress update to JavaScript"""
         self.syncProgressUpdated.emit(json.dumps(progress_dict))
 
+    @pyqtSlot(str, str, result=str)
+    def retryAllFailedTimesheets(self, date_from, date_to):
+        """Clear sync errors for all failed timesheets in date range so they re-queue for push"""
+        try:
+            count = self.database.retry_all_failed_timesheets(date_from, date_to)
+            logger.info(f"Retried {count} failed timesheets from {date_from} to {date_to}")
+            return json.dumps({
+                "success": True,
+                "message": f"{count} records reset to pending. They will sync on the next push.",
+                "count": count
+            })
+        except Exception as e:
+            logger.error(f"Error retrying all failed timesheets: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
     # ==================== EXPORT METHODS ====================
 
     @pyqtSlot(str, str, result=str)

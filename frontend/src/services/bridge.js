@@ -183,6 +183,10 @@ class BridgeService {
     return this.call('triggerCleanup')
   }
 
+  async retryAllFailedTimesheets(dateFrom, dateTo) {
+    return this.call('retryAllFailedTimesheets', dateFrom, dateTo)
+  }
+
   // ==================== EXPORT METHODS ====================
 
   async exportMismatchEmployees(dateFrom, dateTo) {
