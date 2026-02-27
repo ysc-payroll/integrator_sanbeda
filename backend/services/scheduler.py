@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 # Records older than this will be auto-deleted
-CLEANUP_DAYS = 60
+CLEANUP_DAYS = 180
 
 
 class SyncScheduler:
