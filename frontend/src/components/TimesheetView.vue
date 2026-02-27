@@ -145,6 +145,12 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Sync ID
               </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Pulled At
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Synced At
+              </th>
               <th v-if="filterStatus === 'error'" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Error Message
               </th>
@@ -193,6 +199,12 @@
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                 {{ entry.sync_id }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {{ entry.created_at || '-' }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {{ entry.synced_at || '-' }}
               </td>
               <td v-if="filterStatus === 'error'" class="px-6 py-4 text-sm text-red-600 max-w-md">
                 <div class="truncate" :title="entry.sync_error_message">
