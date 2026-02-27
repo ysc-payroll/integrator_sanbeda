@@ -15,6 +15,8 @@ YAHSHUA_BASE_URL = "https://yahshuapayroll.com/api"
 YAHSHUA_LOGIN_URL = f"{YAHSHUA_BASE_URL}/api-auth/"
 YAHSHUA_SYNC_URL = f"{YAHSHUA_BASE_URL}/sync-time-in-out/"
 
+MAX_UNSYNCED_RECORDS = 10000
+
 
 class PushService:
     """Service for pushing data to YAHSHUA Payroll cloud system"""
@@ -157,7 +159,7 @@ class PushService:
             token = self.get_valid_token()
 
             # Get ALL unsynced timesheets
-            all_unsynced = self.database.get_unsynced_timesheets(limit=10000)
+            all_unsynced = self.database.get_unsynced_timesheets(limit=MAX_UNSYNCED_RECORDS)
             logger.info(f"Found {len(all_unsynced)} unsynced timesheet records")
 
             if len(all_unsynced) == 0:
@@ -365,9 +367,9 @@ class PushService:
                 # Token expired, try to re-authenticate
                 logger.warning("Token expired, re-authenticating...")
                 self.database.update_push_token(None)
-                new_token = self.authenticate()
+                auth_result = self.authenticate()
                 # Retry once with new token
-                headers['Authorization'] = f'Token {new_token}'
+                headers['Authorization'] = f'Token {auth_result["token"]}'
                 retry_response = self.session.post(
                     YAHSHUA_SYNC_URL,
                     headers=headers,
