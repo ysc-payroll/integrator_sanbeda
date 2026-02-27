@@ -147,7 +147,15 @@ class PullService:
                     return False, error_msg, stats
 
                 # Parse response
-                data = response.json()
+                try:
+                    data = response.json()
+                except ValueError:
+                    error_msg = f"Non-JSON response (HTTP {response.status_code}): {response.text[:200]}"
+                    logger.error(error_msg)
+                    self.database.update_sync_log(
+                        log_id, 'error', error_message=error_msg
+                    )
+                    return False, error_msg, stats
 
                 # Check API-level success
                 if data.get('code') != 1000:
@@ -171,11 +179,11 @@ class PullService:
                 for attendance in page_data:
                     stats['processed'] += 1
                     try:
-                        result = self.process_attendance(attendance)
+                        result, count = self.process_attendance(attendance)
                         if result == 'success':
-                            stats['success'] += 2  # 2 entries per attendance (IN + OUT)
+                            stats['success'] += count
                         elif result == 'skipped':
-                            stats['skipped'] += 2
+                            stats['skipped'] += count
                         else:
                             stats['failed'] += 1
                     except Exception as e:
@@ -231,10 +239,11 @@ class PullService:
     def process_attendance(self, attendance_data):
         """
         Process single attendance record from San Beda API
-        Creates 2 timesheet entries: one for signInTime, one for signOutTime
+        Creates up to 2 timesheet entries: one for signInTime, one for signOutTime
 
         Returns:
-            str: 'success', 'skipped', or 'failed'
+            tuple: (result: str, count: int) - result is 'success', 'skipped', or 'failed'
+                   count is the number of entries created/skipped
         """
         try:
             # Extract employee data
@@ -246,7 +255,7 @@ class PullService:
 
             if not all([employee_id, employee_name, attendance_date]):
                 logger.warning(f"Missing required fields in attendance data: {attendance_data}")
-                return 'failed'
+                return 'failed', 1
 
             # First, ensure employee exists (use employee_code for lookup)
             employee = self.database.get_employee_by_code(employee_id)
@@ -267,6 +276,8 @@ class PullService:
                 employee = {'id': emp_id, 'employee_code': employee_id}
                 logger.info(f"Created employee: {employee_name} (Code: {employee_id})")
 
+            entries_created = 0
+
             # Create IN entry if signInTime exists
             if sign_in_time:
                 timestamp_in = datetime.strptime(f"{attendance_date} {sign_in_time}", "%Y-%m-%d %H:%M")
@@ -281,6 +292,7 @@ class PullService:
                     photo_path=None
                 )
 
+                entries_created += 1
                 if result_in is None:
                     logger.debug(f"IN entry already exists: {sync_id_in}")
 
@@ -298,11 +310,15 @@ class PullService:
                     photo_path=None
                 )
 
+                entries_created += 1
                 if result_out is None:
                     logger.debug(f"OUT entry already exists: {sync_id_out}")
 
-            return 'success'
+            if entries_created == 0:
+                return 'skipped', 1
+
+            return 'success', entries_created
 
         except Exception as e:
             logger.error(f"Error processing attendance: {e}", exc_info=True)
-            return 'failed'
+            return 'failed', 1
