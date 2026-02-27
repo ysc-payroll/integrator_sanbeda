@@ -185,11 +185,23 @@ except Exception as e:
 # LOGGING CONFIGURATION
 # =============================================================================
 
+from logging.handlers import TimedRotatingFileHandler
+
+_timed_handler = TimedRotatingFileHandler(
+    LOG_FILE,
+    when='midnight',
+    interval=1,
+    backupCount=0,  # No backup limit — cleanup handled by scheduler
+    encoding='utf-8'
+)
+_timed_handler.suffix = '%Y%m%d'
+_timed_handler.namer = lambda name: os.path.join(LOG_DIR, datetime.now().strftime('%Y%m%d') + '.log')
+
 logging.basicConfig(
     level=logging.DEBUG if not IS_FROZEN else logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        _timed_handler,
         logging.StreamHandler()
     ]
 )
@@ -324,7 +336,16 @@ class IntegrationApp:
                         if isinstance(handler, logging.FileHandler):
                             root_logger.removeHandler(handler)
                             handler.close()
-                    root_logger.addHandler(logging.FileHandler(new_log_file))
+                    new_handler = TimedRotatingFileHandler(
+                        new_log_file,
+                        when='midnight',
+                        interval=1,
+                        backupCount=0,
+                        encoding='utf-8'
+                    )
+                    new_handler.suffix = '%Y%m%d'
+                    new_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                    root_logger.addHandler(new_handler)
                     logger.info(f"Log directory switched to: {custom_log_dir}")
             except Exception as e:
                 logger.warning(f"Could not switch log directory: {e}")
