@@ -172,7 +172,6 @@ class PushService:
 
             # Build log_list for all valid records
             all_log_entries = []
-            timesheet_map = {}  # Map local ID to timesheet data
 
             for timesheet in all_unsynced:
                 stats['processed'] += 1
@@ -184,18 +183,24 @@ class PushService:
                     stats['skipped'] += 1
                     continue
 
+                # Get log type
+                log_type = timesheet.get('log_type')
+                if not log_type:
+                    logger.warning(f"Timesheet {timesheet['id']} has no log_type, skipping")
+                    stats['skipped'] += 1
+                    continue
+
                 # Transform to YAHSHUA format
                 log_entry = {
                     "id": timesheet['id'],
                     "employee": employee_code,  # San Beda employee code
                     "log_time": timesheet['time'],  # HH:MM format
-                    "log_type": timesheet['log_type'].upper(),  # IN or OUT
+                    "log_type": log_type.upper(),  # IN or OUT
                     "sync_id": timesheet['sync_id'],
                     "date": timesheet['date']  # YYYY-MM-DD format
                 }
 
                 all_log_entries.append(log_entry)
-                timesheet_map[timesheet['id']] = timesheet
 
             if len(all_log_entries) == 0:
                 message = "No valid records to sync"
@@ -233,6 +238,11 @@ class PushService:
                 success, result = self.push_batch(token, batch)
 
                 if success:
+                    # Update token if re-auth happened during this batch
+                    if result.get('new_token'):
+                        token = result['new_token']
+                        logger.info("Token updated after re-authentication")
+
                     # Process results for this batch
                     logs_synced = result.get('logs_successfully_sync', [])
                     logs_failed = result.get('logs_not_sync', [])
@@ -350,7 +360,11 @@ class PushService:
                 timeout=60
             )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                return False, {'error': f'Non-JSON response (HTTP {response.status_code}): {response.text[:200]}'}
+
             logger.info(f"YAHSHUA response: {json.dumps(data)}")
 
             if response.status_code == 200:
@@ -377,7 +391,9 @@ class PushService:
                     timeout=60
                 )
                 if retry_response.status_code == 200:
-                    return True, retry_response.json()
+                    result = retry_response.json()
+                    result['new_token'] = auth_result['token']
+                    return True, result
                 return False, {'error': f'Authentication failed after retry: HTTP {retry_response.status_code}'}
 
             else:
