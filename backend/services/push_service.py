@@ -259,6 +259,11 @@ class PushService:
                         reason = failed_log.get('reason', 'Unknown error')
                         error_code = failed_log.get('error_code', 0)
 
+                        if not local_id:
+                            logger.warning(f"Received failed log entry with no ID: {failed_log}")
+                            stats['failed'] += 1
+                            continue
+
                         error_msg = f"YAHSHUA Error (code {error_code}): {reason}"
                         self.database.mark_timesheet_sync_failed(local_id, error_msg)
                         stats['failed'] += 1

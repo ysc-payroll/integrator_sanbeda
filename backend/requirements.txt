@@ -16,6 +16,9 @@ schedule>=1.2.0
 # Cryptography for RSA key generation (San Beda authentication)
 pycryptodome>=3.19.0
 
+# Excel file generation for reports
+openpyxl>=3.1.0
+
 # Python standard libraries (no installation needed, listed for reference)
 # - sqlite3 (database)
 # - json (data serialization)

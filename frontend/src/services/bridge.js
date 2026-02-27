@@ -183,6 +183,12 @@ class BridgeService {
     return this.call('triggerCleanup')
   }
 
+  // ==================== EXPORT METHODS ====================
+
+  async exportMismatchEmployees(dateFrom, dateTo) {
+    return this.call('exportMismatchEmployees', dateFrom, dateTo)
+  }
+
   // ==================== DIRECTORY PICKER ====================
 
   async browseDirectory() {

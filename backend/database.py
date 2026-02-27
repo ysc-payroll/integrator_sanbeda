@@ -665,3 +665,27 @@ class Database:
         """Get current YAHSHUA push token"""
         config = self.get_api_config()
         return config.get('push_token') if config else None
+
+    # ==================== REPORT METHODS ====================
+
+    def get_mismatch_employee_report(self, date_from, date_to):
+        """Get grouped report of employees with 'No Employee' sync errors"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT e.name as employee_name,
+                       e.employee_code,
+                       t.sync_error_message,
+                       COUNT(*) as failed_count
+                FROM timesheet t
+                JOIN employee e ON t.employee_id = e.id
+                WHERE t.date >= ?
+                  AND t.date <= ?
+                  AND t.sync_error_message LIKE '%No Employee%'
+                GROUP BY e.employee_code, e.name, t.sync_error_message
+                ORDER BY e.name ASC
+            """, (date_from, date_to))
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()

@@ -419,6 +419,70 @@ class Bridge(QObject):
         """Emit sync progress update to JavaScript"""
         self.syncProgressUpdated.emit(json.dumps(progress_dict))
 
+    # ==================== EXPORT METHODS ====================
+
+    @pyqtSlot(str, str, result=str)
+    def exportMismatchEmployees(self, date_from, date_to):
+        """Export mismatch employee ID records to Excel using a native save dialog"""
+        try:
+            from PyQt6.QtWidgets import QFileDialog
+            import openpyxl
+            from openpyxl.styles import Font
+
+            # Open native save dialog
+            default_filename = f"mismatch_employees_{date_from}_to_{date_to}.xlsx"
+            file_path, _ = QFileDialog.getSaveFileName(
+                None,
+                "Save Mismatch Employee Report",
+                default_filename,
+                "Excel Files (*.xlsx)"
+            )
+
+            if not file_path:
+                return json.dumps({"success": False, "error": "Cancelled"})
+
+            # Query DB for mismatch records
+            records = self.database.get_mismatch_employee_report(date_from, date_to)
+
+            if not records:
+                return json.dumps({"success": False, "error": "No mismatch records found for the selected date range"})
+
+            # Build Excel workbook
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Mismatch Employees"
+
+            # Header row
+            headers = ["Employee Name", "Employee Code", "Error", "Failed Records"]
+            ws.append(headers)
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+
+            # Data rows
+            for row in records:
+                ws.append([
+                    row.get("employee_name", ""),
+                    row.get("employee_code", ""),
+                    row.get("sync_error_message", ""),
+                    row.get("failed_count", 0)
+                ])
+
+            # Ensure .xlsx extension
+            if not file_path.endswith(".xlsx"):
+                file_path += ".xlsx"
+
+            wb.save(file_path)
+            logger.info(f"Mismatch employee report exported to {file_path} ({len(records)} rows)")
+
+            return json.dumps({
+                "success": True,
+                "message": f"Exported {len(records)} employees to {file_path}"
+            })
+
+        except Exception as e:
+            logger.error(f"Error exporting mismatch employees: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
     # ==================== DIRECTORY PICKER ====================
 
     @pyqtSlot(result=str)
