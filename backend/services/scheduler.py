@@ -7,6 +7,9 @@ import schedule
 import threading
 import time
 import logging
+import os
+import sys
+import tempfile
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -158,6 +161,49 @@ class SyncScheduler:
             logger.error(f"Cleanup error: {e}", exc_info=True)
             # Log the error
             self.database.log_other_event(f"Auto-cleanup failed: {str(e)}", status="error")
+
+        # Also clean up old system log files
+        self.run_log_cleanup()
+
+    def _get_log_dir(self):
+        """Get the active log directory, checking config for custom path"""
+        IS_FROZEN = getattr(sys, 'frozen', False)
+        default_dir = (
+            os.path.join(tempfile.gettempdir(), 'sanbeda_integration', 'system_logs')
+            if IS_FROZEN
+            else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'system_logs')
+        )
+        try:
+            config = self.database.get_api_config()
+            custom_dir = config.get('log_directory') if config else None
+            if custom_dir and custom_dir.strip():
+                return custom_dir.strip()
+        except Exception:
+            pass
+        return default_dir
+
+    def run_log_cleanup(self):
+        """Delete system log files older than CLEANUP_DAYS"""
+        log_dir = self._get_log_dir()
+        if not log_dir or not os.path.exists(log_dir):
+            return
+
+        cutoff_date = (datetime.now() - timedelta(days=CLEANUP_DAYS)).strftime("%Y%m%d")
+        deleted_count = 0
+
+        try:
+            for filename in os.listdir(log_dir):
+                if not filename.endswith('.log'):
+                    continue
+                file_date = filename.replace('.log', '')
+                if len(file_date) == 8 and file_date < cutoff_date:
+                    os.remove(os.path.join(log_dir, filename))
+                    deleted_count += 1
+
+            if deleted_count > 0:
+                logger.info(f"Log cleanup: deleted {deleted_count} log files older than {CLEANUP_DAYS} days")
+        except Exception as e:
+            logger.error(f"Log cleanup error: {e}", exc_info=True)
 
     def trigger_cleanup_now(self):
         """Manually trigger cleanup immediately"""

@@ -183,6 +183,12 @@ class BridgeService {
     return this.call('triggerCleanup')
   }
 
+  // ==================== DIRECTORY PICKER ====================
+
+  async browseDirectory() {
+    return this.call('browseDirectory')
+  }
+
   // ==================== SYSTEM LOG METHODS ====================
 
   async getSystemLogFiles() {

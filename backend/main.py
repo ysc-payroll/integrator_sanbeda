@@ -310,6 +310,25 @@ class IntegrationApp:
             # Initialize database
             self.database = Database()
 
+            # Check if a custom log directory is configured
+            try:
+                config = self.database.get_api_config()
+                custom_log_dir = config.get('log_directory') if config else None
+                if custom_log_dir and custom_log_dir.strip():
+                    custom_log_dir = custom_log_dir.strip()
+                    os.makedirs(custom_log_dir, exist_ok=True)
+                    new_log_file = os.path.join(custom_log_dir, datetime.now().strftime('%Y%m%d') + '.log')
+                    # Replace the file handler with one pointing to the new directory
+                    root_logger = logging.getLogger()
+                    for handler in root_logger.handlers[:]:
+                        if isinstance(handler, logging.FileHandler):
+                            root_logger.removeHandler(handler)
+                            handler.close()
+                    root_logger.addHandler(logging.FileHandler(new_log_file))
+                    logger.info(f"Log directory switched to: {custom_log_dir}")
+            except Exception as e:
+                logger.warning(f"Could not switch log directory: {e}")
+
             self.splash.showMessage("Starting services...",
                 Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
                 QColor("#93c5fd"))

@@ -14,12 +14,12 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-# Determine LOG_DIR (same logic as main.py to avoid circular import)
+# Default LOG_DIR (same logic as main.py to avoid circular import)
 IS_FROZEN = getattr(sys, 'frozen', False)
 if IS_FROZEN:
-    LOG_DIR = os.path.join(tempfile.gettempdir(), 'sanbeda_integration', 'system_logs')
+    DEFAULT_LOG_DIR = os.path.join(tempfile.gettempdir(), 'sanbeda_integration', 'system_logs')
 else:
-    LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'system_logs')
+    DEFAULT_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'system_logs')
 
 class Bridge(QObject):
     """Bridge class for Python-JavaScript communication via QWebChannel"""
@@ -40,6 +40,17 @@ class Bridge(QObject):
     def set_scheduler(self, scheduler):
         """Set the scheduler reference (called after scheduler is created)"""
         self.scheduler = scheduler
+
+    def _get_log_dir(self):
+        """Get the active log directory, checking config for custom path"""
+        try:
+            config = self.database.get_api_config()
+            custom_dir = config.get('log_directory') if config else None
+            if custom_dir and custom_dir.strip():
+                return custom_dir.strip()
+        except Exception:
+            pass
+        return DEFAULT_LOG_DIR
 
     # ==================== TIMESHEET METHODS ====================
 
@@ -285,7 +296,8 @@ class Bridge(QObject):
                 'pull_host', 'pull_username', 'pull_password',
                 'push_url', 'push_auth_type', 'push_credentials',
                 'push_username', 'push_password',
-                'pull_interval_minutes', 'push_interval_minutes'
+                'pull_interval_minutes', 'push_interval_minutes',
+                'log_directory'
             ]
 
             for field in allowed_fields:
@@ -407,19 +419,35 @@ class Bridge(QObject):
         """Emit sync progress update to JavaScript"""
         self.syncProgressUpdated.emit(json.dumps(progress_dict))
 
+    # ==================== DIRECTORY PICKER ====================
+
+    @pyqtSlot(result=str)
+    def browseDirectory(self):
+        """Open native folder picker dialog and return selected path"""
+        try:
+            from PyQt6.QtWidgets import QFileDialog
+            folder = QFileDialog.getExistingDirectory(None, "Select Log Directory")
+            if folder:
+                return json.dumps({"success": True, "data": folder})
+            return json.dumps({"success": False, "error": "No folder selected"})
+        except Exception as e:
+            logger.error(f"Error opening directory picker: {e}")
+            return json.dumps({"success": False, "error": str(e)})
+
     # ==================== SYSTEM LOG METHODS ====================
 
     @pyqtSlot(result=str)
     def getSystemLogFiles(self):
         """Get list of available system log files"""
         try:
-            if not LOG_DIR or not os.path.exists(LOG_DIR):
+            log_dir = self._get_log_dir()
+            if not log_dir or not os.path.exists(log_dir):
                 return json.dumps({"success": True, "data": []})
 
             files = []
-            for filename in sorted(os.listdir(LOG_DIR), reverse=True):
+            for filename in sorted(os.listdir(log_dir), reverse=True):
                 if filename.endswith('.log'):
-                    filepath = os.path.join(LOG_DIR, filename)
+                    filepath = os.path.join(log_dir, filename)
                     files.append({
                         "filename": filename,
                         "date": filename.replace('.log', ''),
@@ -435,7 +463,8 @@ class Bridge(QObject):
     def getSystemLogContent(self, filename):
         """Get content of a specific log file (last 500 lines)"""
         try:
-            if not LOG_DIR:
+            log_dir = self._get_log_dir()
+            if not log_dir:
                 return json.dumps({"success": False, "error": "Log directory not configured"})
 
             # Sanitize filename to prevent directory traversal
@@ -443,7 +472,7 @@ class Bridge(QObject):
             if not safe_filename.endswith('.log'):
                 return json.dumps({"success": False, "error": "Invalid log file"})
 
-            filepath = os.path.join(LOG_DIR, safe_filename)
+            filepath = os.path.join(log_dir, safe_filename)
 
             if not os.path.exists(filepath):
                 return json.dumps({"success": False, "error": "Log file not found"})

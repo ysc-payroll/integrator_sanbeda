@@ -215,6 +215,12 @@ class Database:
             except:
                 pass
 
+            # Configurable log directory
+            try:
+                cursor.execute("ALTER TABLE api_config ADD COLUMN log_directory TEXT")
+            except:
+                pass
+
             # Migration: Update sync_logs table to allow 'other' sync_type
             # Check if we need to migrate by trying to insert and rollback
             try:
@@ -283,7 +289,6 @@ class Database:
             conn.commit()
             return cursor.lastrowid
         except sqlite3.IntegrityError as e:
-            logger.warning(f"Duplicate timesheet entry: {sync_id}")
             return None
         except Exception as e:
             conn.rollback()

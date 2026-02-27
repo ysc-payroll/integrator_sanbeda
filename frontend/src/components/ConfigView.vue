@@ -207,6 +207,23 @@
         System Logs
       </h2>
       <p class="text-sm text-gray-500 mb-4">View application logs for debugging and troubleshooting.</p>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Log Storage Directory</label>
+        <div class="flex gap-2">
+          <input
+            type="text"
+            v-model="form.log_directory"
+            class="input flex-1"
+            placeholder="Leave empty to use default location"
+          />
+          <button @click="browseLogDirectory" class="btn btn-secondary whitespace-nowrap">
+            Browse
+          </button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Custom directory path for storing log files. Requires app restart to take effect.</p>
+      </div>
+
       <button @click="openLogModal" class="btn btn-secondary">
         View System Logs
       </button>
@@ -278,7 +295,8 @@ const form = ref({
   pull_interval_minutes: 30,
   push_username: '',
   push_password: '',
-  push_interval_minutes: 15
+  push_interval_minutes: 15,
+  log_directory: ''
 })
 
 const saving = ref(false)
@@ -316,7 +334,8 @@ const loadConfig = async () => {
         pull_interval_minutes: result.data.pull_interval_minutes || 30,
         push_username: result.data.push_username || '',
         push_password: '',  // Never prefill password
-        push_interval_minutes: result.data.push_interval_minutes || 15
+        push_interval_minutes: result.data.push_interval_minutes || 15,
+        log_directory: result.data.log_directory || ''
       }
 
       // Set YAHSHUA login state
@@ -434,6 +453,17 @@ const reconnectPull = async () => {
     error(`Connection failed: ${err.message}`)
   } finally {
     reconnectingPull.value = false
+  }
+}
+
+const browseLogDirectory = async () => {
+  try {
+    const result = await bridgeService.browseDirectory()
+    if (result.success) {
+      form.value.log_directory = result.data
+    }
+  } catch (err) {
+    // User cancelled the dialog, no action needed
   }
 }
 
